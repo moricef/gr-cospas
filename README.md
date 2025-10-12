@@ -148,7 +148,7 @@ Please open an issue before starting major work.
 
 ## Author
 
-Fabrice Morice
+F4MLV
 
 ## Acknowledgments
 
