@@ -88,16 +88,13 @@ cospas_sarsat_decoder_impl::~cospas_sarsat_decoder_impl()
     }
 }
 
-// Fonction principale de traitement
+// Fonction principale de traitement - VERSION BUFFER D'ACCUMULATION
 int cospas_sarsat_decoder_impl::work(int noutput_items,
                                       gr_vector_const_void_star &input_items,
                                       gr_vector_void_star &output_items)
 {
     const gr_complex *in = (const gr_complex *) input_items[0];
     uint8_t *out = (uint8_t *) output_items[0];
-
-    int samples_processed = 0;
-    int bytes_produced = 0;
 
     const int max_bytes = noutput_items - (noutput_items % 8);
 
@@ -108,16 +105,46 @@ int cospas_sarsat_decoder_impl::work(int noutput_items,
     if (d_debug_mode) {
         std::cout << "[DEBUG] work() call #" << work_call_count++
                   << ": noutput_items=" << noutput_items
-                  << ", state=" << d_state
-                  << ", d_sample_count=" << d_sample_count
-                  << ", d_bit_count=" << d_bit_count
-                  << ", d_total_bit_count=" << d_total_bit_count << std::endl;
+                  << ", accumulator_size=" << d_sample_accumulator.size() << std::endl;
     }
-    
-    while (samples_processed < noutput_items && bytes_produced < max_bytes) {
-        if (samples_processed >= noutput_items) break;
-        
-        gr_complex sample = in[samples_processed++];
+
+    // ÉTAPE 1: Accumuler TOUS les échantillons entrants
+    for (int i = 0; i < noutput_items; i++) {
+        d_sample_accumulator.push_back(in[i]);
+    }
+
+    // ÉTAPE 2: Si on n'a pas encore assez d'échantillons, attendre
+    if (d_sample_accumulator.size() < MIN_SAMPLES_FOR_FRAME) {
+        if (d_debug_mode) {
+            std::cout << "[DEBUG] Accumulation en cours: " << d_sample_accumulator.size()
+                      << "/" << MIN_SAMPLES_FOR_FRAME << " échantillons" << std::endl;
+        }
+        consume_each(noutput_items);
+        return 0;  // Pas de sortie pour l'instant
+    }
+
+    // ÉTAPE 3: Traiter le buffer accumulé avec la machine à états
+    int bytes_produced = process_accumulated_buffer(out, max_bytes);
+
+    // DEBUG: Trace work() output
+    if (d_debug_mode) {
+        std::cout << "[DEBUG] work() exit: bytes_produced=" << bytes_produced
+                  << ", remaining_samples=" << d_sample_accumulator.size() << std::endl;
+    }
+
+    consume_each(noutput_items);
+    return bytes_produced;
+}
+
+// NOUVEAU: Traitement du buffer accumulé en utilisant la machine à états existante
+int cospas_sarsat_decoder_impl::process_accumulated_buffer(uint8_t* out, int max_bytes)
+{
+    int bytes_produced = 0;
+    int samples_processed = 0;
+
+    // Traiter les échantillons accumulés avec la machine à états
+    while (samples_processed < d_sample_accumulator.size() && bytes_produced < max_bytes) {
+        gr_complex sample = d_sample_accumulator[samples_processed++];
         float phase = compute_phase(sample);
 
         switch (d_state) {
@@ -349,14 +376,14 @@ int cospas_sarsat_decoder_impl::work(int noutput_items,
         d_last_phase = phase;
     }
 
-    // DEBUG: Trace work() output
-    if (d_debug_mode) {
-        std::cout << "[DEBUG] work() exit: samples_processed=" << samples_processed
-                  << ", bytes_produced=" << bytes_produced
-                  << ", state=" << d_state << std::endl;
+    // Nettoyer les échantillons traités du buffer d'accumulation
+    if (samples_processed > 0) {
+        d_sample_accumulator.erase(
+            d_sample_accumulator.begin(),
+            d_sample_accumulator.begin() + samples_processed
+        );
     }
 
-    consume_each(samples_processed);
     return bytes_produced;
 }
 

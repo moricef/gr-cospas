@@ -69,6 +69,10 @@ private:
     std::vector<std::complex<float>> d_bit_buffer;
     std::deque<uint8_t> d_output_bits;
     std::vector<float> d_phase_history;
+
+    // NOUVEAU: Buffer d'accumulation pour déterminisme
+    std::deque<gr_complex> d_sample_accumulator;
+    static constexpr int MIN_SAMPLES_FOR_FRAME = 21000;  // 6400 + 14400 + marge
     
     // Traitement
     float d_last_phase;
@@ -110,6 +114,9 @@ private:
     float compute_timing_error(const std::complex<float>* samples, int num_samples);
     void update_timing(float error);
     float low_pass_filter(float phase);
+
+    // NOUVEAU: Traitement du buffer accumulé
+    int process_accumulated_buffer(uint8_t* out, int max_bytes);
 
 public:
     cospas_sarsat_decoder_impl(float sample_rate, bool debug_mode);
