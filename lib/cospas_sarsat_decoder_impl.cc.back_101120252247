@@ -1,0 +1,537 @@
+/* -*- c++ -*- */
+/*
+ * Implémentation du décodeur Cospas-Sarsat
+ */
+
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
+
+#include <gnuradio/io_signature.h>
+#include "cospas_sarsat_decoder_impl.h"
+#include <cmath>
+#include <iostream>
+#include <iomanip>
+
+namespace gr {
+namespace cospas {
+
+// Factory method - IMPORTANT pour GNU Radio
+cospas_sarsat_decoder::sptr
+cospas_sarsat_decoder::make(float sample_rate, bool debug_mode)
+{
+    return gnuradio::make_block_sptr<cospas_sarsat_decoder_impl>(sample_rate, debug_mode);
+}
+
+// Constructeur privé
+cospas_sarsat_decoder_impl::cospas_sarsat_decoder_impl(float sample_rate, bool debug_mode)
+    : gr::sync_block("cospas_sarsat_decoder",
+                     gr::io_signature::make(1, 1, sizeof(gr_complex)),
+                     gr::io_signature::make(1, 1, sizeof(uint8_t))),
+      d_sample_rate(sample_rate),
+      d_samples_per_bit(static_cast<int>(sample_rate / BIT_RATE)),
+      d_carrier_samples(static_cast<int>(CARRIER_DURATION * sample_rate)),
+      d_state(STATE_CARRIER_SEARCH),
+      d_carrier_count(0),
+      d_sample_count(0),
+      d_bit_count(0),
+      d_preamble_ones(0),
+      d_frame_sync_bits(0),
+      d_frame_sync_pattern(0),
+      d_is_test_mode(false),
+      d_last_phase(0.0f),
+      d_phase_avg(0.0f),
+      d_consecutive_carrier(0),
+      d_sync_acquired(false),
+      d_frame_length(LONG_FRAME_BITS),  // Par défaut trame longue
+      d_is_long_frame(true),
+      d_frames_decoded(0),
+      d_sync_failures(0),
+      d_debug_mode(debug_mode),
+      d_phase_lpf_state(0.0f),
+      d_timing_error(0.0f),
+      d_mu(0.0f),
+      d_omega(static_cast<float>(d_samples_per_bit)),
+      d_gain_omega(0.001f),  // Petit gain pour convergence douce
+      d_gain_mu(0.1f)
+{
+    d_bit_buffer.resize(d_samples_per_bit * 2);  // Buffer plus grand pour interpolation
+    d_phase_history.reserve(100);
+
+    // Configuration du nombre d'échantillons à traiter
+    set_output_multiple(8);  // Traiter par octets complets
+
+    if (d_debug_mode) {
+        std::cout << "[COSPAS] Décodeur initialisé"
+                  << " - Fréq. échantillonnage: " << d_sample_rate << " Hz"
+                  << " - Débit: " << BIT_RATE << " bps"
+                  << " - Échantillons/bit: " << d_samples_per_bit << std::endl;
+    }
+}
+
+// Destructeur
+cospas_sarsat_decoder_impl::~cospas_sarsat_decoder_impl()
+{
+    if (d_debug_mode) {
+        std::cout << "[COSPAS] Statistiques finales:"
+                  << " Trames décodées: " << d_frames_decoded
+                  << " Échecs sync: " << d_sync_failures << std::endl;
+    }
+}
+
+// Fonction principale de traitement
+int cospas_sarsat_decoder_impl::work(int noutput_items,
+                                      gr_vector_const_void_star &input_items,
+                                      gr_vector_void_star &output_items)
+{
+    const gr_complex *in = (const gr_complex *) input_items[0];
+    uint8_t *out = (uint8_t *) output_items[0];
+    
+    int samples_processed = 0;
+    int bytes_produced = 0;
+    
+    while (samples_processed < noutput_items && bytes_produced < noutput_items) {
+        gr_complex sample = in[samples_processed++];
+        float phase = compute_phase(sample);
+
+        // Filtre passe-bas sur la phase - DÉSACTIVÉ pour test avec signal synthétique
+        // phase = low_pass_filter(phase);
+        
+        switch (d_state) {
+            case STATE_CARRIER_SEARCH:
+                // Recherche de 160 ms de porteuse stable à ~0 rad
+                if (detect_carrier(phase)) {
+                    d_carrier_count++;
+                    d_consecutive_carrier++;
+
+                    // Accumuler les phases pour calculer la moyenne
+                    d_phase_history.push_back(phase);
+                    if (d_phase_history.size() > 100) {
+                        d_phase_history.erase(d_phase_history.begin());
+                    }
+
+                    if (d_consecutive_carrier >= d_carrier_samples) {
+                        d_state = STATE_INITIAL_JUMP;
+
+                        // Calculer la phase moyenne des 100 derniers échantillons
+                        d_phase_avg = 0.0f;
+                        for (float p : d_phase_history) {
+                            d_phase_avg += p;
+                        }
+                        d_phase_avg /= d_phase_history.size();
+
+                        if (d_debug_mode) {
+                            std::cout << "[COSPAS] Porteuse détectée après "
+                                      << d_carrier_count << " échantillons"
+                                      << " - Phase moyenne: " << d_phase_avg << " rad" << std::endl;
+                        }
+                    }
+                } else {
+                    d_consecutive_carrier = 0;
+                    d_phase_history.clear();
+                }
+                break;
+                
+            case STATE_INITIAL_JUMP:
+                // Détecter le saut initial (0 rad → ±1.1 rad)
+                {
+                    float diff = std::abs(phase - d_phase_avg);
+
+                    if (detect_initial_jump(phase)) {
+                        d_state = STATE_PREAMBLE_SYNC;
+                        d_sample_count = 0;
+                        d_bit_count = 0;
+                        d_preamble_ones = 0;
+                        d_sync_acquired = false;
+
+                        // Ajouter le premier échantillon au buffer
+                        d_bit_buffer[d_sample_count++] = sample;
+
+                        if (d_debug_mode) {
+                            std::cout << "[COSPAS] Saut initial détecté: "
+                                      << d_phase_avg << " → " << phase << " rad (diff=" << diff << ")" << std::endl;
+                        }
+                    }
+                }
+                break;
+                
+            case STATE_PREAMBLE_SYNC:
+                // Accumulation des échantillons pour un bit
+                if (d_sample_count < d_samples_per_bit) {
+                    d_bit_buffer[d_sample_count++] = sample;
+                }
+
+                // Décoder le bit quand on a tous les échantillons
+                if (d_sample_count >= d_samples_per_bit) {
+                    char bit = decode_bit(d_bit_buffer.data(), d_samples_per_bit);
+                    
+                    if (bit == '1') {
+                        d_preamble_ones++;
+                        
+                        if (d_debug_mode && d_preamble_ones % 5 == 0) {
+                            std::cout << "[COSPAS] Préambule: " << d_preamble_ones
+                                      << "/" << PREAMBLE_BITS << " bits '1'" << std::endl;
+                        }
+                        
+                        if (d_preamble_ones >= PREAMBLE_BITS) {
+                            d_state = STATE_FRAME_SYNC;
+                            d_frame_sync_bits = 0;
+                            d_frame_sync_pattern = 0;
+
+                            if (d_debug_mode) {
+                                std::cout << "[COSPAS] Préambule complet, vérification frame sync..." << std::endl;
+                            }
+                        }
+                    } else {
+                        // Erreur dans le préambule, retour à la recherche
+                        if (d_debug_mode) {
+                            std::cout << "[COSPAS] Erreur préambule au bit " 
+                                      << d_preamble_ones << " (reçu: '" << bit << "')" << std::endl;
+                        }
+                        d_sync_failures++;
+                        reset_decoder();
+                    }
+                    
+                    d_sample_count = 0;
+                }
+                break;
+
+            case STATE_FRAME_SYNC:
+                // Accumulation des échantillons pour un bit de frame sync
+                if (d_sample_count < d_samples_per_bit) {
+                    d_bit_buffer[d_sample_count++] = sample;
+                }
+
+                // Décoder le bit de frame sync
+                if (d_sample_count >= d_samples_per_bit) {
+                    char bit = decode_bit(d_bit_buffer.data(), d_samples_per_bit);
+
+                    if (bit != '?') {
+                        // Accumuler le bit dans le pattern
+                        d_frame_sync_pattern = (d_frame_sync_pattern << 1) | (bit == '1' ? 1 : 0);
+                        d_frame_sync_bits++;
+
+                        // Quand on a les 9 bits, vérifier le pattern
+                        if (d_frame_sync_bits >= FRAME_SYNC_BITS) {
+                            if (d_frame_sync_pattern == FRAME_SYNC_NORMAL) {
+                                d_is_test_mode = false;
+                                d_state = STATE_DATA_DECODE;
+                                d_sync_acquired = true;
+                                d_frames_decoded++;
+                                d_bit_count = 0;
+
+                                if (d_debug_mode) {
+                                    std::cout << "[COSPAS] *** SYNCHRONISATION ACQUISE (Mode Normal) ***" << std::endl;
+                                }
+                            } else if (d_frame_sync_pattern == FRAME_SYNC_TEST) {
+                                d_is_test_mode = true;
+                                d_state = STATE_DATA_DECODE;
+                                d_sync_acquired = true;
+                                d_frames_decoded++;
+                                d_bit_count = 0;
+
+                                if (d_debug_mode) {
+                                    std::cout << "[COSPAS] *** SYNCHRONISATION ACQUISE (Mode Self-Test) ***" << std::endl;
+                                }
+                            } else {
+                                // Pattern frame sync invalide
+                                if (d_debug_mode) {
+                                    std::cout << "[COSPAS] Frame sync invalide: "
+                                              << std::oct << d_frame_sync_pattern
+                                              << std::dec << " (attendu: "
+                                              << std::oct << FRAME_SYNC_NORMAL << " ou "
+                                              << FRAME_SYNC_TEST << std::dec << ")" << std::endl;
+                                }
+                                d_sync_failures++;
+                                reset_decoder();
+                            }
+                        }
+                    } else {
+                        // Erreur de décodage dans le frame sync
+                        if (d_debug_mode) {
+                            std::cout << "[COSPAS] Erreur décodage frame sync au bit " << d_frame_sync_bits << std::endl;
+                        }
+                        d_sync_failures++;
+                        reset_decoder();
+                    }
+
+                    d_sample_count = 0;
+                }
+                break;
+
+            case STATE_DATA_DECODE:
+                // Accumulation des échantillons pour un bit de données
+                if (d_sample_count < d_samples_per_bit) {
+                    d_bit_buffer[d_sample_count++] = sample;
+                }
+
+                // Décoder le bit de données
+                if (d_sample_count >= d_samples_per_bit) {
+                    char bit = decode_bit(d_bit_buffer.data(), d_samples_per_bit);
+
+                    if (bit != '?') {
+                        // Détecter le type de trame au premier bit (Format Flag)
+                        if (d_bit_count == 0) {
+                            d_is_long_frame = (bit == '1');
+                            d_frame_length = d_is_long_frame ? LONG_FRAME_BITS : SHORT_FRAME_BITS;
+
+                            if (d_debug_mode) {
+                                std::cout << "[COSPAS] Type de trame détecté: "
+                                          << (d_is_long_frame ? "LONGUE" : "COURTE")
+                                          << " (" << d_frame_length << " bits)" << std::endl;
+                            }
+                        }
+
+                        // Ajouter le bit au buffer de sortie
+                        d_output_bits.push_back(bit == '1' ? 1 : 0);
+                        
+                        // Quand on a 8 bits, créer un octet
+                        if (d_output_bits.size() >= 8) {
+                            uint8_t byte = 0;
+                            for (int i = 0; i < 8; i++) {
+                                byte = (byte << 1) | d_output_bits[0];
+                                d_output_bits.pop_front();
+                            }
+                            
+                            out[bytes_produced++] = byte;
+                            
+                            if (d_debug_mode && (d_bit_count / 8) % 10 == 0) {
+                                std::cout << "[COSPAS] Octet " << (d_bit_count / 8) 
+                                          << ": 0x" << std::hex << std::setw(2) 
+                                          << std::setfill('0') << (int)byte 
+                                          << std::dec << std::endl;
+                            }
+                        }
+                        
+                        d_bit_count++;
+
+                        // Vérifier la fin de trame (nombre de bits dépend du type)
+                        if (d_bit_count >= d_frame_length) {
+                            if (d_debug_mode) {
+                                std::cout << "[COSPAS] Fin de trame (" << d_frame_length
+                                          << " bits décodés)" << std::endl;
+                            }
+                            reset_decoder();
+                        }
+                    } else {
+                        // Erreur de décodage, perte de synchronisation
+                        if (d_debug_mode) {
+                            std::cout << "[COSPAS] Erreur décodage au bit " << d_bit_count << std::endl;
+                        }
+                        reset_decoder();
+                    }
+                    
+                    d_sample_count = 0;
+                }
+                break;
+        }
+        
+        d_last_phase = phase;
+    }
+    
+    // Dire à GNU Radio combien d'échantillons on a consommé
+    consume_each(samples_processed);
+    
+    return bytes_produced;
+}
+
+// Calcul de la phase d'un échantillon complexe
+float cospas_sarsat_decoder_impl::compute_phase(std::complex<float> sample)
+{
+    return std::arg(sample);
+}
+
+// Normalisation de la phase dans [-π, π]
+float cospas_sarsat_decoder_impl::normalize_phase(float phase)
+{
+    while (phase > M_PI) phase -= 2 * M_PI;
+    while (phase < -M_PI) phase += 2 * M_PI;
+    return phase;
+}
+
+// Calcul de la différence de phase normalisée
+float cospas_sarsat_decoder_impl::compute_phase_diff(float phase1, float phase2)
+{
+    float diff = phase2 - phase1;
+    return normalize_phase(diff);
+}
+
+// Détection de la porteuse (phase proche de 0)
+bool cospas_sarsat_decoder_impl::detect_carrier(float phase)
+{
+    return std::abs(phase) < CARRIER_THRESHOLD;
+}
+
+// Détection du saut initial
+bool cospas_sarsat_decoder_impl::detect_initial_jump(float phase)
+{
+    float diff = std::abs(phase - d_phase_avg);
+    return diff > JUMP_THRESHOLD && diff < (MOD_PHASE + 0.3f);
+}
+
+// Décodage d'un bit par analyse des transitions
+char cospas_sarsat_decoder_impl::decode_bit(const std::complex<float>* samples, int num_samples)
+{
+    // Calculer l'erreur de timing et ajuster
+    float timing_error = compute_timing_error(samples, num_samples);
+    update_timing(timing_error);
+
+    // Calculer la phase moyenne de chaque moitié du bit
+    std::complex<float> first_half_sum(0, 0);
+    std::complex<float> second_half_sum(0, 0);
+
+    int half_samples = num_samples / 2;
+
+    // Première moitié (échantillons 0 à half-1)
+    for (int i = 0; i < half_samples; i++) {
+        first_half_sum += samples[i];
+    }
+
+    // Deuxième moitié (échantillons half à num_samples-1)
+    for (int i = half_samples; i < num_samples; i++) {
+        second_half_sum += samples[i];
+    }
+
+    // Calculer les phases moyennes
+    float phase_first = std::arg(first_half_sum);
+    float phase_second = std::arg(second_half_sum);
+
+    // Calculer la différence de phase
+    float phase_diff = compute_phase_diff(phase_first, phase_second);
+
+    // Décision basée sur le seuil
+    // Bit '1': transition descendante (+1.1 → -1.1) donc diff ≈ -2.2 rad
+    // Bit '0': transition montante (-1.1 → +1.1) donc diff ≈ +2.2 rad
+    if (phase_diff < -PHASE_THRESHOLD) {
+        return '1';
+    } else if (phase_diff > PHASE_THRESHOLD) {
+        return '0';
+    } else {
+        // Pas de transition claire détectée
+        if (d_debug_mode) {
+            std::cout << "[COSPAS] Transition ambiguë: diff = " << phase_diff
+                      << " rad (omega=" << d_omega << ")" << std::endl;
+        }
+        return '?';
+    }
+}
+
+// Moyennage de phase (fonction utilitaire)
+float cospas_sarsat_decoder_impl::average_phase(const std::complex<float>* samples,
+                                                 int start, int count)
+{
+    std::complex<float> sum(0, 0);
+    for (int i = start; i < start + count && i < d_samples_per_bit; i++) {
+        sum += samples[i];
+    }
+    return std::arg(sum);
+}
+
+// Calcul de l'erreur de timing (Early-Late)
+float cospas_sarsat_decoder_impl::compute_timing_error(const std::complex<float>* samples, int num_samples)
+{
+    // Algorithme Mueller & Muller simplifié
+    // Détecte si on est en avance ou en retard sur la transition
+
+    int half = num_samples / 2;
+    int quarter = num_samples / 4;
+
+    // Échantillons "early" (avant la transition)
+    std::complex<float> early_sum(0, 0);
+    for (int i = half - quarter; i < half; i++) {
+        early_sum += samples[i];
+    }
+
+    // Échantillons "late" (après la transition)
+    std::complex<float> late_sum(0, 0);
+    for (int i = half; i < half + quarter; i++) {
+        late_sum += samples[i];
+    }
+
+    float phase_early = std::arg(early_sum);
+    float phase_late = std::arg(late_sum);
+
+    // Différence de phase
+    float phase_diff = compute_phase_diff(phase_early, phase_late);
+
+    // L'erreur de timing est proportionnelle à la différence
+    // Si phase_diff est grand, la transition est bien centrée
+    // Si phase_diff est petit, on est décalé
+
+    // Retourner une erreur normalisée
+    return std::abs(phase_diff) < PHASE_THRESHOLD ? 0.1f : 0.0f;
+}
+
+// Mise à jour du timing avec l'erreur mesurée
+void cospas_sarsat_decoder_impl::update_timing(float error)
+{
+    float old_omega = d_omega;
+
+    // Ajuster mu (position fractionnaire)
+    d_mu += d_gain_mu * error;
+
+    // Ajuster omega (période du symbole)
+    d_omega += d_gain_omega * error;
+
+    // Limiter omega pour éviter la dérive excessive
+    float omega_min = d_samples_per_bit * 0.95f;
+    float omega_max = d_samples_per_bit * 1.05f;
+
+    if (d_omega < omega_min) d_omega = omega_min;
+    if (d_omega > omega_max) d_omega = omega_max;
+
+    // Debug: afficher les ajustements significatifs
+    if (d_debug_mode && std::abs(d_omega - old_omega) > 0.01f) {
+        std::cout << "[COSPAS PLL] omega: " << old_omega << " → " << d_omega
+                  << " (error=" << error << ", mu=" << d_mu << ")" << std::endl;
+    }
+}
+
+// Filtre passe-bas IIR simple
+float cospas_sarsat_decoder_impl::low_pass_filter(float phase)
+{
+    d_phase_lpf_state = LPF_ALPHA * phase + (1.0f - LPF_ALPHA) * d_phase_lpf_state;
+    return d_phase_lpf_state;
+}
+
+// Mise à jour de la PLL (pour future extension)
+void cospas_sarsat_decoder_impl::PLL::update(float error)
+{
+    freq += loop_bw * error;
+    phase += freq + loop_bw * error;
+    phase = std::fmod(phase, 2 * M_PI);
+}
+
+// Réinitialisation du décodeur
+void cospas_sarsat_decoder_impl::reset_decoder()
+{
+    d_state = STATE_CARRIER_SEARCH;
+    d_carrier_count = 0;
+    d_sample_count = 0;
+    d_bit_count = 0;
+    d_preamble_ones = 0;
+    d_frame_sync_bits = 0;
+    d_frame_sync_pattern = 0;
+    d_consecutive_carrier = 0;
+    d_sync_acquired = false;
+    d_frame_length = LONG_FRAME_BITS;  // Réinitialiser à trame longue par défaut
+    d_is_long_frame = true;
+    d_is_test_mode = false;
+    d_output_bits.clear();
+    d_phase_lpf_state = 0.0f;
+
+    // Réinitialiser les variables de la PLL
+    d_timing_error = 0.0f;
+    d_mu = 0.0f;
+    d_omega = static_cast<float>(d_samples_per_bit);  // Revenir à la valeur nominale
+}
+
+// Réinitialisation des statistiques
+void cospas_sarsat_decoder_impl::reset_statistics()
+{
+    d_frames_decoded = 0;
+    d_sync_failures = 0;
+}
+
+} // namespace cospas
+} // namespace gr

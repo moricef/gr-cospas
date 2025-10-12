@@ -1,0 +1,174 @@
+/* -*- c++ -*- */
+/*
+ * Header privé d'implémentation
+ */
+
+#ifndef INCLUDED_COSPAS_COSPAS_SARSAT_DECODER_IMPL_H
+#define INCLUDED_COSPAS_COSPAS_SARSAT_DECODER_IMPL_H
+
+#include <gnuradio/cospas/cospas_sarsat_decoder.h>
+#include <vector>
+#include <complex>
+#include <deque>
+#include <mutex>
+
+namespace gr {
+namespace cospas {
+
+class cospas_sarsat_decoder_impl : public cospas_sarsat_decoder
+{
+private:
+    // Paramètres du système (configurables)
+    float d_sample_rate;                   // Hz (configurable)
+    static constexpr float BIT_RATE = 400.0f;          // bps
+    int d_samples_per_bit;                 // Calculé: sample_rate/400
+    static constexpr float BIT_DURATION = 0.0025f;     // 2.5 ms
+    static constexpr float CARRIER_DURATION = 0.160f;  // 160 ms
+    int d_carrier_samples;                 // Calculé: 160ms * sample_rate
+    static constexpr int PREAMBLE_BITS = 15;           // Bits de synchronisation (bits 1-15)
+    static constexpr int FRAME_SYNC_BITS = 9;          // Frame synchronization (bits 16-24)
+    static constexpr int SHORT_FRAME_BITS = 112;       // Trame courte (total avec préambule)
+    static constexpr int LONG_FRAME_BITS = 144;        // Trame longue (total avec préambule)
+
+    // Frame sync patterns
+    static constexpr uint16_t FRAME_SYNC_NORMAL = 0b000101111;    // Mode normal
+    static constexpr uint16_t FRAME_SYNC_TEST = 0b011010000;      // Mode self-test
+
+    // Paramètres de modulation
+    static constexpr float MOD_PHASE = 1.1f;           // ±1.1 radians (±63°)
+    static constexpr float PHASE_THRESHOLD = 1.0f;     // Seuil de décision
+    static constexpr float CARRIER_THRESHOLD = 0.2f;   // Seuil porteuse
+    static constexpr float JUMP_THRESHOLD = 0.5f;      // Seuil saut initial
+    
+    // Tolérance aux erreurs
+    static constexpr int MAX_CONSECUTIVE_ERRORS = 5;
+    static constexpr int MAX_TOTAL_ERRORS = 20;
+    
+    // États de la machine d'états
+    enum DecoderState {
+        STATE_CARRIER_SEARCH,    // Recherche de la porteuse
+        STATE_INITIAL_JUMP,       // Attente du saut initial
+        STATE_PREAMBLE_SYNC,      // Synchronisation sur préambule (15 bits)
+        STATE_FRAME_SYNC,         // Vérification frame sync (9 bits)
+        STATE_DATA_DECODE         // Décodage des données
+    };
+    
+    // Variables d'état
+    DecoderState d_state;
+    int d_carrier_count;              // Compteur d'échantillons de porteuse
+    int d_sample_count;               // Compteur d'échantillons dans le bit
+    int d_bit_count;                  // Compteur de bits
+    int d_preamble_ones;              // Compteur de '1' dans le préambule
+    int d_frame_sync_bits;            // Bits du frame sync accumulés
+    uint16_t d_frame_sync_pattern;    // Pattern frame sync reçu
+    bool d_is_test_mode;              // Mode self-test détecté
+    int d_error_count;                // Compteur d'erreurs consécutives
+
+    // Buffers
+    std::vector<std::complex<float>> d_bit_buffer;  // Buffer pour un bit
+    std::deque<uint8_t> d_output_bits;              // Bits décodés
+    std::vector<float> d_phase_history;             // Historique de phase
+    
+    // Variables de traitement
+    float d_last_phase;              // Dernière phase mesurée
+    float d_phase_avg;               // Phase moyenne
+    int d_consecutive_carrier;       // Échantillons consécutifs de porteuse
+    bool d_sync_acquired;            // Synchronisation acquise
+    int d_frame_length;              // Longueur de la trame (112 ou 144 bits)
+    bool d_is_long_frame;            // Type de trame détecté
+
+    // Récupération d'horloge (clock recovery)
+    float d_timing_error;            // Erreur de timing accumulée
+    float d_mu;                      // Position fractionnaire dans le symbole (0.0-1.0)
+    float d_omega;                   // Échantillons par symbole (avec correction)
+    float d_gain_omega;              // Gain pour ajustement d_omega
+    float d_gain_mu;                 // Gain pour ajustement d_mu
+    float d_pll_integral;            // Terme intégral PLL
+
+    // Statistiques et debug
+    int d_frames_decoded;
+    int d_sync_failures;
+    bool d_debug_mode;
+    
+    // Synchronisation thread-safe
+    mutable std::mutex d_mutex;
+    
+    // PLL pour synchronisation fine
+    struct PLL {
+        float phase;
+        float frequency;
+        float phase_error;
+        float bandwidth;
+        float damping;
+        float min_freq;
+        float max_freq;
+        
+        PLL() : phase(0), frequency(0), phase_error(0), 
+                bandwidth(0.01f), damping(0.707f),
+                min_freq(-0.1f), max_freq(0.1f) {}
+        
+        void update(float error, float sample_rate) {
+            phase_error = error;
+            
+            // Gains PLL standard (Z-transform)
+            float Kp = 2.0f * damping * bandwidth;
+            float Ki = bandwidth * bandwidth;
+            
+            // Mise à jour fréquence (terme intégral)
+            frequency += Ki * error;
+            frequency = std::max(min_freq, std::min(frequency, max_freq));
+            
+            // Mise à jour phase (terme proportionnel)
+            phase += frequency + Kp * error;
+            
+            // Normalisation phase
+            phase = std::fmod(phase, 2.0f * M_PI);
+            if (phase < 0) phase += 2.0f * M_PI;
+        }
+        
+        float get_phase() const { return phase; }
+        float get_frequency() const { return frequency; }
+    } d_pll;
+
+    // Méthodes privées
+    float normalize_phase(float phase);
+    float compute_phase_diff(float phase1, float phase2);
+    float compute_phase(std::complex<float> sample);
+    char decode_bit(const std::complex<float>* samples, int num_samples);
+    bool detect_carrier(float phase);
+    bool detect_initial_jump(float phase);
+    void reset_decoder();
+    
+    // Moyennage de phase sur plusieurs échantillons
+    float average_phase(const std::complex<float>* samples, int start, int count);
+
+    // Récupération d'horloge
+    float compute_timing_error(const std::complex<float>* samples, int num_samples);
+    void update_timing(float error);
+
+    // Filtre passe-bas simple pour la phase
+    float d_phase_lpf_state;
+    static constexpr float LPF_ALPHA = 0.3f;
+    float low_pass_filter(float phase);
+
+public:
+    cospas_sarsat_decoder_impl(float sample_rate, bool debug_mode);
+    ~cospas_sarsat_decoder_impl();
+    
+    // Fonction principale de traitement GNU Radio
+    int work(int noutput_items,
+             gr_vector_const_void_star &input_items,
+             gr_vector_void_star &output_items) override;
+    
+    // Implémentation des méthodes virtuelles
+    bool is_synchronized() const override;
+    int get_frames_decoded() const override;
+    int get_sync_failures() const override;
+    void set_debug_mode(bool enable) override;
+    void reset_statistics() override;
+};
+
+} // namespace cospas
+} // namespace gr
+
+#endif /* INCLUDED_COSPAS_COSPAS_SARSAT_DECODER_IMPL_H */

@@ -1,0 +1,41 @@
+# Build directories
+build/
+cmake-build-*/
+
+# Python
+*.pyc
+__pycache__/
+*.pyo
+*.egg-info/
+dist/
+.pytest_cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Test data (IQ files can be large)
+*.iq
+*.wav
+*.dat
+*.bin
+
+# Test logs
+/tmp/*.log
+examples/*.log
+
+# Generated files
+*.so
+*.dylib
+*.dll
+
+# MacOS
+.DS_Store
+
+# Backup files
+*~
+*.bak
+*.orig
