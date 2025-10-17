@@ -1,0 +1,34 @@
+# Trame Test 2G COSPAS-SARSAT
+# Source: Décodeur officiel (validé BCH)
+# Date: 2025-10-12
+
+# Trame hexadécimale (63 caractères = 252 bits)
+0C0E7456390956CCD02799A2468ACF135787FFF00C02832000037707609BC0F
+
+# Informations décodées:
+# - Type: EPIRB (Beacon Type: 001)
+# - TAC: 12345
+# - Serial: 13398
+# - Pays: France (MID 228)
+# - Position: 42.85001°N, 4.95001°E (Marseille offshore)
+# - MMSI: 147937762
+# - Rotating Field: G.008 (#0)
+# - Activation: -3 heures
+# - Dernière position: -5 minutes
+# - Altitude: 0m
+# - BCH: VALIDE ✓
+
+# Format binaire complet (252 bits):
+# Bits 1-16:    TAC 12345
+# Bits 17-30:   Serial 13398
+# Bits 31-40:   Country 228 (France)
+# Bits 41-43:   Flags (homing=0, rls=0, test=1)
+# Bits 44-90:   Position GPS (42.85°N, 4.95°E)
+# Bits 91-140:  Vessel ID (MMSI maritime)
+# Bits 141-154: Spare + Beacon Type
+# Bits 155-202: Rotating Field #0 (G.008)
+# Bits 203-250: BCH parité (48 bits)
+# Bits 251-252: Padding
+
+# Test Mode: OUI (bit 43 = 1)
+# BCH Validation: PASSED ✓
