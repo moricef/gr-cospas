@@ -263,32 +263,94 @@ def dsss_spread_oqpsk(frame_bits):
 
     return i_chips, q_chips
 
-def oqpsk_modulate(i_chips, q_chips, sample_rate):
+def rrc_filter_taps(alpha, span, sps):
     """
-    Modulation OQPSK avec offset Q = Tc/2.
+    Génère les coefficients d'un filtre Root-Raised Cosine (RRC).
+
+    T.018 Rev.12 Section 2.3.4: RRC filter
+    - Roll-off factor: α = 0.8
+    - Span: ±31 chips (63 taps total)
+    - Samples per symbol: sps (samples/chip)
+
+    Args:
+        alpha: Roll-off factor (0.8 pour T.018)
+        span: Span du filtre en symboles (31 pour T.018 → 63 taps)
+        sps: Samples per symbol (samples/chip)
+
+    Returns:
+        np.array: Coefficients du filtre RRC normalisés
+    """
+    n_taps = 2 * span * sps + 1
+    t = np.arange(-span * sps, span * sps + 1) / float(sps)
+
+    h = np.zeros(len(t))
+
+    for i, time in enumerate(t):
+        if time == 0:
+            h[i] = (1 - alpha + 4 * alpha / np.pi)
+        elif abs(time) == 1 / (4 * alpha):
+            h[i] = (alpha / np.sqrt(2)) * (
+                ((1 + 2 / np.pi) * np.sin(np.pi / (4 * alpha))) +
+                ((1 - 2 / np.pi) * np.cos(np.pi / (4 * alpha)))
+            )
+        else:
+            numerator = (
+                np.sin(np.pi * time * (1 - alpha)) +
+                4 * alpha * time * np.cos(np.pi * time * (1 + alpha))
+            )
+            denominator = np.pi * time * (1 - (4 * alpha * time) ** 2)
+            h[i] = numerator / denominator
+
+    # Normaliser pour gain unitaire
+    h = h / np.sqrt(np.sum(h ** 2))
+
+    return h
+
+def oqpsk_modulate(i_chips, q_chips, sample_rate, use_rrc=True):
+    """
+    Modulation OQPSK avec offset Q = Tc/2 et filtre RRC.
 
     T.018 Section 2.3.3:
     "The chips of the I and Q components shall have an average offset
      of half a chip period ± 1% with I leading Q by one-half chip period."
 
+    T.018 Section 2.3.4: Pulse shaping avec RRC α=0.8
+
     Args:
         i_chips: Chips canal I (int8: ±1)
         q_chips: Chips canal Q (int8: ±1)
         sample_rate: Fréquence d'échantillonnage (Hz)
+        use_rrc: Activer filtre RRC (True par défaut)
 
     Returns:
         np.array: Signal IQ complexe (complex64)
     """
     samples_per_chip = int(sample_rate / CHIP_RATE)
 
-    # Suréchantillonner I et Q
-    i_signal = np.repeat(i_chips, samples_per_chip).astype(np.float32)
-    q_signal = np.repeat(q_chips, samples_per_chip).astype(np.float32)
+    if use_rrc:
+        # Filtre RRC T.018: α=0.8, span=±31 chips (63 taps)
+        rrc_taps = rrc_filter_taps(alpha=0.8, span=31, sps=samples_per_chip)
+
+        # Suréchantillonner par insertion de zéros
+        i_upsampled = np.zeros(len(i_chips) * samples_per_chip, dtype=np.float32)
+        q_upsampled = np.zeros(len(q_chips) * samples_per_chip, dtype=np.float32)
+
+        i_upsampled[::samples_per_chip] = i_chips
+        q_upsampled[::samples_per_chip] = q_chips
+
+        # Appliquer filtre RRC
+        i_signal = np.convolve(i_upsampled, rrc_taps, mode='same')
+        q_signal = np.convolve(q_upsampled, rrc_taps, mode='same')
+
+    else:
+        # Mode legacy sans RRC (répétition simple)
+        i_signal = np.repeat(i_chips, samples_per_chip).astype(np.float32)
+        q_signal = np.repeat(q_chips, samples_per_chip).astype(np.float32)
 
     # Offset Q de Tc/2 (I leading Q)
     offset_samples = samples_per_chip // 2
     q_signal_delayed = np.concatenate([
-        np.full(offset_samples, q_chips[0], dtype=np.float32),
+        np.full(offset_samples, 0.0 if use_rrc else q_chips[0], dtype=np.float32),
         q_signal
     ])
 
@@ -300,8 +362,10 @@ def oqpsk_modulate(i_chips, q_chips, sample_rate):
     # Signal complexe I + jQ
     iq_signal = i_signal + 1j * q_signal_delayed
 
-    # Normalisation (peak = 1/√2 pour QPSK)
-    iq_signal = iq_signal / np.sqrt(2)
+    # Normalisation pour magnitude = 1
+    max_mag = np.max(np.abs(iq_signal))
+    if max_mag > 0:
+        iq_signal = iq_signal / max_mag
 
     return iq_signal.astype(np.complex64)
 
