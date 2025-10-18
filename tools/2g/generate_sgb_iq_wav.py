@@ -143,8 +143,8 @@ Sortie:
                         help='Fichier contenant trame hex T.018')
     parser.add_argument('-t', '--trame',
                         help='Trame hex directe (63 caractères)')
-    parser.add_argument('-s', '--sample-rate', type=int, default=400000,
-                        help='Sample rate IQ (défaut: 400000 Hz)')
+    parser.add_argument('-s', '--sample-rate', type=int, default=384000,
+                        help='Sample rate IQ (défaut: 384000 Hz, compatible PlutoSDR)')
     parser.add_argument('-w', '--wav-rate', type=int, default=48000,
                         help='Sample rate WAV (défaut: 48000 Hz)')
     parser.add_argument('-q', '--quiet', action='store_true',

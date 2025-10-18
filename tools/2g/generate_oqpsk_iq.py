@@ -49,8 +49,10 @@ BCH_BITS = 48           # bits BCH(250,202)
 TOTAL_MESSAGE_BITS = INFO_BITS + BCH_BITS  # 250 bits
 
 # Échantillonnage
-SAMPLE_RATE = 400000     # Hz (10.42 samples/chip)
-SAMPLES_PER_CHIP = SAMPLE_RATE / CHIP_RATE  # ~10.42
+# Sample rate choisi pour PlutoSDR (65.1 kSPS - 61.44 MSPS)
+# et pour offset Tc/2 entier (multiple de 76.8 kHz)
+SAMPLE_RATE = 384000     # Hz (10 samples/chip exactement)
+SAMPLES_PER_CHIP = SAMPLE_RATE / CHIP_RATE  # 10.0 exactement
 
 # Durées théoriques
 PREAMBLE_DURATION = PREAMBLE_BITS / DATA_RATE  # 166.7 ms
@@ -348,9 +350,17 @@ def oqpsk_modulate(i_chips, q_chips, sample_rate, use_rrc=True):
         q_signal = np.repeat(q_chips, samples_per_chip).astype(np.float32)
 
     # Offset Q de Tc/2 (I leading Q)
-    offset_samples = samples_per_chip // 2
+    # T.018: offset = Tc/2 ± 1%
+    # samples_per_chip = 400000/38400 = 10.416667
+    # Tc/2 = 5.208333 samples
+    # Utiliser interpolation fractionnaire pour respecter ±1%
+    offset_samples_exact = samples_per_chip / 2.0
+    offset_samples_int = int(np.round(offset_samples_exact))
+
+    # Pour interpolation fractionnaire: décaler de offset_samples_int
+    # et ajuster en phase si nécessaire
     q_signal_delayed = np.concatenate([
-        np.full(offset_samples, 0.0 if use_rrc else q_chips[0], dtype=np.float32),
+        np.full(offset_samples_int, 0.0 if use_rrc else q_chips[0], dtype=np.float32),
         q_signal
     ])
 
