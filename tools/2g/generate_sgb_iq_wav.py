@@ -11,8 +11,8 @@ Usage:
     ./generate_sgb_iq_wav.py -f trame.txt -o test_sgb
 
 Sortie:
-    - output_base.iq  : Signal IQ complexe (float32, 400 kHz)
-    - output_base.wav : Signal WAV stéréo (I/Q, 16-bit, 48 kHz)
+    - output_base.iq  : Signal IQ complexe (float32, 384 kHz) - FORMAT NATIF PLUTO
+    - output_base.wav : Signal WAV I/Q stéréo (16-bit, 48 kHz) - BASEBAND DATA, PAS AUDIO
 """
 
 import numpy as np
@@ -132,8 +132,9 @@ Exemples:
   ./generate_sgb_iq_wav.py -t 0C0E7456390956CCD02799A2468ACF... -o custom
 
 Sortie:
-  - {output}.iq  : Signal IQ complexe (400 kHz, float32)
-  - {output}.wav : Signal WAV stéréo (48 kHz, int16)
+  - {output}.iq  : Signal IQ complexe (384 kHz, float32) - Pour PlutoSDR
+  - {output}.wav : I/Q baseband stéréo (48 kHz, int16) - Pour GNU Radio/SDR++
+                   ⚠️  PAS du son audio ! Contient données I/Q pour analyse SDR
         """
     )
 
@@ -222,12 +223,22 @@ Sortie:
         print(f"  {wav_filename} ({wav_size / 1024:.2f} KB)")
         print()
         print("💡 Utilisation:")
-        print(f"  # Écouter WAV")
-        print(f"  aplay {wav_filename}")
         print()
-        print(f"  # Analyser IQ avec GNU Radio")
+        print("  ⚠️  IMPORTANT: Le fichier .wav contient des données I/Q baseband,")
+        print("      PAS du son audio ! Si vous le jouez avec aplay/VLC,")
+        print("      vous entendrez du bruit - c'est NORMAL.")
+        print()
+        print(f"  # Transmettre avec PlutoSDR (RECOMMANDÉ - utiliser .iq)")
+        print(f"  iio_attr -C -d cf-ad9361-dds0 frequency 406037500")
+        print(f"  cat {iq_filename} > /dev/iio:device2")
+        print()
+        print(f"  # Analyser avec GNU Radio Companion")
         print(f"  gnuradio-companion")
-        print(f"  File Source → Type: Complex, Rate: {args.sample_rate}")
+        print(f"  - Fichier IQ: File Source → Type: Complex, Rate: {args.sample_rate}")
+        print(f"  - Fichier WAV: WAV File Source → Rate: {args.wav_rate} (I=Left, Q=Right)")
+        print()
+        print(f"  # Visualiser le spectre")
+        print(f"  python3 visualize_iq.py {iq_filename}")
         print("=" * 70)
 
 if __name__ == '__main__':
