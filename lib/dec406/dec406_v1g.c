@@ -1069,7 +1069,7 @@ void decode_1g(const uint8_t *bits, int length) {
     // Generate and display hexadecimal representation
     char hex_str[64];
     binary_to_hex(frame_str, length, hex_str, sizeof(hex_str));
-    printf("Hexadecimal content: %s\n", hex_str);
+    //printf("Hexadecimal content: %s\n", hex_str);
 
     if (!validate_frame_sync(frame_str, length)) {
         printf("Warning: Frame synchronization issues detected\n");
@@ -1136,7 +1136,7 @@ void decode_1g(const uint8_t *bits, int length) {
    // Display coordinates
   // Display base position (PDF-1) if we have position data
   if (info.has_position) {
-    printf("\nPosition (PDF-1): %.5fdeg%c, %.5fdeg%c", 
+    printf("\nPosition (PDF-1): %.5f, %.5f", 
            fabs(info.base_lat), (info.base_lat >= 0) ? 'N' : 'S',
            fabs(info.base_lon), (info.base_lon >= 0) ? 'E' : 'W');
     
@@ -1151,7 +1151,7 @@ void decode_1g(const uint8_t *bits, int length) {
       printf("\nLongitude offset: %c%d min %d sec",
              (info.lon_offset_sign > 0) ? '+' : '-',
              info.lon_offset_min, info.lon_offset_sec);
-      printf("\nComposite position: %.5fdeg%c, %.5fdeg%c",
+      printf("\nComposite position: %.5f %c, %.5f %c",
              fabs(info.lat), (info.lat >= 0) ? 'N' : 'S',
              fabs(info.lon), (info.lon >= 0) ? 'E' : 'W');
     }
@@ -1170,7 +1170,7 @@ void decode_1g(const uint8_t *bits, int length) {
       printf("\nLongitude offset: %c%d min %d sec",
              (info.lon_offset_sign > 0) ? '+' : '-',
              info.lon_offset_min, info.lon_offset_sec);
-      printf("\nComposite position: %.5fdeg%c, %.5fdeg%c",
+      printf("\nComposite position: %.5f %c, %.5f %c",
              fabs(info.lat), (info.lat >= 0) ? 'N' : 'S',
              fabs(info.lon), (info.lon >= 0) ? 'E' : 'W');
     }

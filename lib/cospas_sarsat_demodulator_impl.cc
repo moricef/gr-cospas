@@ -592,14 +592,15 @@ int cospas_sarsat_demodulator_impl::process_accumulated_buffer(uint8_t* out, int
                     if (d_mu > 25.0f) d_mu = 25.0f;
                     if (d_mu < -25.0f) d_mu = -25.0f;
 
-                    if (d_total_bit_count == 143 || d_total_bit_count == 144) {
-                        std::cout << "[DEBUG BIT " << d_total_bit_count << "] "
-                                  << "bit='" << bit << "'"
-                                  << ", detected_pos=" << detected_position
-                                  << ", expected_pos=" << expected_position
-                                  << ", timing_error=" << d_timing_error
-                                  << ", d_mu=" << d_mu << std::endl;
-                    }
+                    // Debug timing tracking sur derniers bits (desactive pour production)
+                    // if (d_total_bit_count == 143 || d_total_bit_count == 144) {
+                    //     std::cout << "[DEBUG BIT " << d_total_bit_count << "] "
+                    //               << "bit='" << bit << "'"
+                    //               << ", detected_pos=" << detected_position
+                    //               << ", expected_pos=" << expected_position
+                    //               << ", timing_error=" << d_timing_error
+                    //               << ", d_mu=" << d_mu << std::endl;
+                    // }
 
                      if (d_debug_mode) {
                          int message_bit_index = d_total_bit_count - BIT_SYNC_BITS - FRAME_SYNC_BITS;
@@ -629,7 +630,6 @@ int cospas_sarsat_demodulator_impl::process_accumulated_buffer(uint8_t* out, int
                         // Afficher le HEX de la trame démodulée
                         // Les bits sont dans out[bytes_produced - d_bits_demodulated ... bytes_produced - 1]
                         if (d_bits_demodulated >= 112) {  // Au moins trame courte
-                            std::cout << "[REF FR HEX]: FFFE2F8E39048D158AC01E3AA482856824CE"<< std::endl;
                             std::cout << "[COSPAS] HEX: ";
                             int start_bit = bytes_produced - d_bits_demodulated;
                             // Convertir bits en hex (4 bits = 1 digit hex)

@@ -3,10 +3,11 @@
 """
 scan406_iq.py - Scanner COSPAS-SARSAT avec démodulation I/Q
 Reproduit le comportement de scan406.pl mais avec traitement I/Q direct
+Intègre les optimisations validées: lowpass 20kHz, normalisation 0.15, seuil 0.05
 
 Usage: python3 scan406_iq.py <f1_MHz> <f2_MHz> [ppm] [snr_threshold]
-Exemple: python3 scan406_iq.py 403.000 403.100 0 10
-         python3 scan406_iq.py 406.000 406.100 55 10
+Exemple: python3 scan406_iq.py 403.000 403.100 0 7
+         python3 scan406_iq.py 406.000 406.100 55 7
 """
 
 import sys
@@ -59,15 +60,27 @@ class cospas_receiver(gr.top_block):
             filter.firdes.low_pass(1, rtl_sample_rate, sample_rate/2 * 0.8, sample_rate/2 * 0.2)
         )
 
-        # Normalisation du signal RTL-SDR (amplitude GQRX)
-        normalization_factor = 1.0 / 12.0
+        # Filtre passe-bas pour COSPAS-SARSAT
+        # Signal BPSK 400 bps + offset frequence + Manchester encoding occupe ~±10 kHz
+        # 20 kHz donne les meilleurs resultats (68% vs 50% avec 10 kHz)
+        bandpass_high = 20000    # 20 kHz
+        transition_width = 2000  # 2 kHz de transition
+        self.bandpass = filter.fir_filter_ccf(
+            1,
+            filter.firdes.low_pass(1, sample_rate, bandpass_high, transition_width)
+        )
+
+        # Normalisation du signal RTL-SDR
+        # RTL-SDR uint8 -> float32 donne amplitude ~1.2, GQRX attend ~0.1
+        # Augmente a 0.15 pour ameliorer la robustesse en fin de burst
+        normalization_factor = 0.15
         self.normalizer = blocks.multiply_const_cc(normalization_factor)
 
         # Burst Detector (tampon circulaire)
         self.burst_detector = cospas.cospas_burst_detector(
             sample_rate=sample_rate,
             buffer_duration_ms=2000,
-            threshold=0.1,
+            threshold=0.05,  # Reduit de 0.1 a 0.05 pour capturer signal faible en fin de burst
             min_burst_duration_ms=200,
             debug_mode=False
         )
@@ -91,19 +104,26 @@ class cospas_receiver(gr.top_block):
         self.file_sink = blocks.file_sink(gr.sizeof_char, self.bits_file.name, False)
         self.file_sink.set_unbuffered(True)
 
-        # Null sink pour la sortie 2G
+        # Null sinks pour les sorties stream du router
+        self.null_sink_1g = blocks.null_sink(gr.sizeof_gr_complex)
         self.null_sink_2g = blocks.null_sink(gr.sizeof_gr_complex)
 
-        # Connexions
+        # Connexions (stream)
         self.connect(self.rtl_source, self.decimator)
-        self.connect(self.decimator, self.normalizer)
+        self.connect(self.decimator, self.bandpass)
+        self.connect(self.bandpass, self.normalizer)
         self.connect(self.normalizer, self.burst_detector)
         self.connect(self.burst_detector, self.burst_router)
-        self.connect((self.burst_router, 0), self.demod_1g)
-        self.connect(self.demod_1g, self.file_sink)
+
+        # Connexions (messages)
+        self.msg_connect((self.burst_detector, "bursts"), (self.burst_router, "bursts"))
+        self.msg_connect((self.burst_router, "bursts_1g"), (self.demod_1g, "bursts"))
+
+        # Sorties stream du router vers null sinks
+        self.connect((self.burst_router, 0), self.null_sink_1g)
         self.connect((self.burst_router, 1), self.null_sink_2g)
 
-        print(f"[FLOWGRAPH] RTL-SDR → Decimator → Normalizer → Detector → Router → Demod 1G")
+        print(f"[FLOWGRAPH] RTL-SDR → Decimator → Lowpass 20kHz → Normalizer → Detector → Router → Demod 1G")
 
     def get_bits_file(self):
         return self.bits_file.name if self.bits_file else None
@@ -220,6 +240,9 @@ def freq_balise_autorisee(freq_mhz):
     """
     # Canaux autorisés pour balises de détresse
     canaux_autorises = [
+        # ⚠️ TEST UNIQUEMENT - À RETIRER EN PRODUCTION ⚠️
+        (403.040, "TEST"),  # Balise test locale - RETIRER AVANT PRODUCTION
+
         # Canaux actifs avec balises de détresse
         (406.025, "B"),  # Beacons TA < 01/01/2002
         (406.028, "C"),  # Beacons TA < 01/01/2007
@@ -267,19 +290,71 @@ def bits_to_hex(bits_data):
     return hex_str
 
 
-def send_email_alert(trame_file, utc_time, freq_mhz, config):
-    """Envoie un email d'alerte"""
+def parse_trames_from_file(trame_file):
+    """
+    Parse le fichier trame pour extraire chaque trame individuellement
+    Retourne une liste de trames UNIQUES (dédupliquées par HEX ID)
+    """
+    if not os.path.exists(trame_file) or os.path.getsize(trame_file) == 0:
+        return []
+
+    with open(trame_file, 'r') as f:
+        content = f.read()
+
+    import re
+
+    # Une trame complète commence par [COSPAS] HEX: ou === 406 MHz BEACON DECODE
+    # et se termine avant le prochain [COSPAS] HEX: ou === 406 MHz BEACON DECODE
+
+    # Chercher toutes les positions de début de trame
+    pattern = r'(?:^|\n)(?=\[COSPAS\] HEX:|=== 406 MHz BEACON DECODE)'
+    splits = list(re.finditer(pattern, content))
+
+    if not splits:
+        # Aucun pattern trouvé, retourner tout le contenu
+        if content.strip():
+            return [content.strip()]
+        return []
+
+    # Extraire chaque trame et déduper par HEX ID
+    trames_dict = {}  # {hex_id: trame_content}
+
+    for i in range(len(splits)):
+        start = splits[i].start()
+        end = splits[i+1].start() if i+1 < len(splits) else len(content)
+        trame = content[start:end].strip()
+
+        if trame:
+            # Extraire le HEX ID de la trame pour déduplication
+            hex_match = re.search(r'\[COSPAS\] HEX: ([0-9A-F]+)', trame)
+            if hex_match:
+                hex_id = hex_match.group(1)
+                # Garder seulement la première occurrence de chaque HEX ID
+                if hex_id not in trames_dict:
+                    trames_dict[hex_id] = trame
+            else:
+                # Si pas de HEX trouvé, ajouter quand même
+                trames_dict[f'unknown_{i}'] = trame
+
+    return list(trames_dict.values())
+
+
+def send_email_simple(trame_file, utc_time, freq_mhz, config):
+    """Envoie UN email avec le fichier trame.asc (comme scan406.pl)"""
     if not config:
         print("[EMAIL] Configuration email non disponible")
         return False
 
     try:
         subject = "Alerte_Balise_406"
-        message = f"Date et Heure (UTC) du decodage: {utc_time}\nFréquence: {freq_mhz:.3f} MHz"
+        message = f"Date et Heure (UTC) du decodage: {utc_time}"
+
+        # Log file comme scan406.pl
+        log_file = config.get('log_file', '../data/mail.log')
 
         cmd = [
             "sendemail",
-            "-l", config.get('log_file', '/tmp/email.log'),
+            "-l", log_file,
             "-f", config['utilisateur'],
             "-u", subject,
             "-t", config['destinataires'],
@@ -297,6 +372,42 @@ def send_email_alert(trame_file, utc_time, freq_mhz, config):
 
     except Exception as e:
         print(f"[EMAIL] Erreur: {e}")
+        return False
+
+
+def reset_rtlsdr_usb():
+    """
+    Réinitialise le dongle RTL-SDR USB (comme reset_dvbt() dans scan406.pl)
+    Trouve le device Realtek RTL2832/2838 et le reset via ioctl
+    """
+    try:
+        # Trouver le device RTL-SDR via lsusb
+        result = subprocess.run(['lsusb'], capture_output=True, text=True, timeout=5)
+        if result.returncode != 0:
+            return False
+
+        for line in result.stdout.split('\n'):
+            # Chercher "Realtek" et ID 2832 ou 2838
+            if 'Realtek' in line and ('2832' in line or '2838' in line):
+                # Format: "Bus 001 Device 006: ID 0bda:2838 Realtek..."
+                parts = line.split()
+                if len(parts) >= 4:
+                    bus = parts[1]
+                    device = parts[3].rstrip(':')
+                    usb_path = f"/dev/bus/usb/{bus}/{device}"
+
+                    # Appeler reset_usb
+                    reset_cmd = ['../utils/reset_usb', usb_path]
+                    subprocess.run(reset_cmd, timeout=2)
+                    print(f"[USB] Reset RTL-SDR: {usb_path}")
+                    time.sleep(1)  # Laisser le temps au device de se réinitialiser
+                    return True
+
+        print("[USB] RTL-SDR non trouvé via lsusb")
+        return False
+
+    except Exception as e:
+        print(f"[USB] Erreur reset: {e}")
         return False
 
 
@@ -321,16 +432,16 @@ def main():
     # Arguments obligatoires
     if len(sys.argv) < 3:
         print("Usage: python3 scan406_iq.py <f1_MHz> <f2_MHz> [ppm] [snr_threshold]")
-        print("Exemple: python3 scan406_iq.py 403.000 403.100 0 10")
-        print("         python3 scan406_iq.py 406.000 406.100 55 10")
+        print("Exemple: python3 scan406_iq.py 403.000 403.100 0 7")
+        print("         python3 scan406_iq.py 406.000 406.100 55 7")
         sys.exit(1)
 
     f1_mhz = float(sys.argv[1])
     f2_mhz = float(sys.argv[2])
     ppm = int(sys.argv[3]) if len(sys.argv) > 3 else 0
-    snr_threshold = float(sys.argv[4]) if len(sys.argv) > 4 else 10.0
+    snr_threshold = float(sys.argv[4]) if len(sys.argv) > 4 else 7.0  # Seuil abaissé pour signaux faibles
 
-    timeout_s = 56  # Comme scan406.pl
+    timeout_s = 56  # Comme scan406.pl - correspond aux 50s entre bursts des vraies balises
 
     print("=" * 60)
     print("SCANNER COSPAS-SARSAT (I/Q)")
@@ -348,13 +459,16 @@ def main():
     else:
         print("[CONFIG] Email non configuré")
 
-    # Fichiers temporaires
-    csv_file = tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False).name
+    # Fichiers de travail
+    csv_file = '../data/scan_rtlpower.csv'  # Fichier fixe dans data/
     trame_dir = '../data'
     os.makedirs(trame_dir, exist_ok=True)
 
     # Boucle principale (comme scan406.pl)
     while True:
+        # Reset USB au début de chaque cycle (comme scan406.pl ligne 80)
+        reset_rtlsdr_usb()
+
         utc_time = datetime.now(timezone.utc).strftime('%d %m %Y   %Hh%Mm%Ss')
         print(f"\n{'='*60}")
         print(f"[SCAN] {utc_time} UTC")
@@ -376,7 +490,8 @@ def main():
                 freq_trouvee = freq_hz
                 print(f"[SCAN] Signal trouvé: {freq_hz/1e6:.6f} MHz ({max_db:.1f} dB)")
             else:
-                print("[SCAN] Aucun signal détecté, nouveau scan...")
+                print("[SCAN] Aucun signal détecté, pause 3s avant nouveau scan...")
+                time.sleep(3)  # Laisser le temps au dongle de se libérer
                 continue
         else:
             # Mode fréquence fixe
@@ -385,6 +500,9 @@ def main():
 
         # ÉTAPE 2: Capture et démodulation sur la fréquence trouvée
         while True:
+            # Délai de sécurité avant réouverture du dongle
+            time.sleep(2)
+
             utc_time = datetime.now(timezone.utc).strftime('%d %m %Y   %Hh%Mm%Ss')
             print(f"\n[DEMOD] Lancement capture sur {freq_trouvee/1e6:.6f} MHz")
             print(f"[DEMOD] {utc_time} UTC")
@@ -400,20 +518,67 @@ def main():
             bits_file = tb.get_bits_file()
             trouve = False
 
-            try:
-                # Démarrer la capture
-                tb.start()
-                print(f"[DEMOD] Capture en cours ({timeout_s}s)...")
+            # Créer fichier trame (.asc) pour capturer stdout du décodeur C++
+            trame_file = os.path.join(trame_dir, 'trame.asc')
 
-                # Attendre le timeout
-                time.sleep(timeout_s)
+            # Sauvegarder l'objet stdout Python original (une seule fois au début de la boucle)
+            if 'stdout_original' not in locals():
+                stdout_original = sys.stdout
+                stdout_fd = stdout_original.fileno()
+
+            try:
+                # Message avant redirection
+                print(f"[DEMOD] Capture en cours ({timeout_s}s)...")
+                sys.stdout.flush()
+
+                # Rediriger stdout vers fichier au niveau système
+                trame_fd = os.open(trame_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
+                stdout_backup_fd = os.dup(stdout_fd)
+                os.dup2(trame_fd, stdout_fd)
+                os.close(trame_fd)
+
+                # Démarrer la capture (stdout maintenant redirigé vers fichier)
+                tb.start()
+
+                # Polling : arrêter dès qu'UNE trame est décodée, puis continuer 15s pour capturer tout
+                temps_ecoule = 0
+                trame_detectee_a = None
+
+                while temps_ecoule < timeout_s:
+                    time.sleep(1)
+                    temps_ecoule += 1
+
+                    # Vérifier si au moins une trame a été décodée
+                    if tb.get_statistics()['frames_decoded'] > 0:
+                        if trame_detectee_a is None:
+                            trame_detectee_a = temps_ecoule
+                            # Continuer 15s pour capturer le décodage complet
+
+                        # Arrêter 15s après détection
+                        if temps_ecoule >= trame_detectee_a + 15:
+                            break
 
                 # Arrêter proprement
                 tb.stop()
                 tb.wait()
 
-                # Statistiques
+                # Récupérer les statistiques avant destruction
                 stats = tb.get_statistics()
+
+                # Détruire le flowgraph pour forcer le destructeur C++ à écrire le décodage complet
+                del tb
+
+                # Attendre que le C++ finisse de flusher son stdout dans le fichier
+                # Le décodage complet prend plusieurs secondes à calculer et écrire
+                time.sleep(5)
+
+                # Forcer sync du file descriptor
+                os.fsync(stdout_fd)
+
+                # Restaurer stdout
+                os.dup2(stdout_backup_fd, stdout_fd)
+                os.close(stdout_backup_fd)
+                sys.stdout = stdout_original
                 print(f"[STATS] Bursts détectés: {stats['bursts_detected']}")
                 print(f"[STATS] Bursts 1G routés: {stats['bursts_1g']}")
                 print(f"[STATS] Trames démodulées: {stats['frames_decoded']}")
@@ -421,40 +586,48 @@ def main():
                 # Vérifier si trame trouvée
                 if stats['frames_decoded'] > 0:
                     trouve = True
-                    print("\n[TROUVE] Trame COSPAS-SARSAT détectée !")
+                    print(f"[TROUVE] {stats['frames_decoded']} trame(s) COSPAS-SARSAT détectée(s) !")
 
-                    # Lire les bits
-                    with open(bits_file, 'rb') as f:
-                        bits_data = list(f.read())
+                    # Vérifier si fréquence autorisée pour email
+                    freq_mhz_actuelle = freq_trouvee / 1e6
+                    print(f"[FREQ] Vérification canal: {freq_mhz_actuelle:.3f} MHz")
 
-                    if len(bits_data) >= 144:
-                        hex_trame = bits_to_hex(bits_data)
-                        print(f"[TRAME] {hex_trame}")
+                    # Afficher le décodage dans un bloc séparé
+                    if os.path.exists(trame_file) and os.path.getsize(trame_file) > 0:
+                        print("\n" + "="*80)
+                        with open(trame_file, 'r') as f:
+                            print(f.read())
+                        print("="*80 + "\n")
 
-                        # Sauvegarder la trame
-                        trame_file = os.path.join(trame_dir, 'trame_iq.txt')
-                        with open(trame_file, 'w') as f:
-                            f.write(f"Date UTC: {utc_time}\n")
-                            f.write(f"Fréquence: {freq_trouvee/1e6:.6f} MHz\n")
-                            f.write(f"Hex: {hex_trame}\n")
-                            f.write(f"Bits: {''.join(str(b&1) for b in bits_data[:144])}\n")
-
-                        # Vérifier si fréquence autorisée pour email
-                        freq_mhz_actuelle = freq_trouvee / 1e6
-                        if freq_balise_autorisee(freq_mhz_actuelle):
-                            if mail_config:
-                                send_email_alert(trame_file, utc_time, freq_mhz_actuelle, mail_config)
-                            else:
-                                print("[EMAIL] Configuration manquante, email non envoyé")
-                        # Si non autorisée, message déjà affiché par freq_balise_autorisee()
+                    if freq_balise_autorisee(freq_mhz_actuelle):
+                        # Envoyer UN email avec le fichier trame.asc (comme scan406.pl)
+                        if mail_config:
+                            send_email_simple(trame_file, utc_time, freq_mhz_actuelle, mail_config)
+                        else:
+                            print("[EMAIL] Configuration manquante, email non envoyé")
+                    # Si non autorisée, message déjà affiché par freq_balise_autorisee()
 
             except KeyboardInterrupt:
+                # Restaurer stdout
+                try:
+                    os.dup2(stdout_backup_fd, stdout_fd)
+                    os.close(stdout_backup_fd)
+                except:
+                    pass
+                sys.stdout = stdout_original
                 print("\n[STOP] Interruption utilisateur")
                 tb.stop()
                 tb.wait()
                 raise
 
             except Exception as e:
+                # Restaurer stdout
+                try:
+                    os.dup2(stdout_backup_fd, stdout_fd)
+                    os.close(stdout_backup_fd)
+                except:
+                    pass
+                sys.stdout = stdout_original
                 print(f"[ERREUR] {e}")
                 tb.stop()
                 tb.wait()
@@ -472,7 +645,16 @@ def main():
             # Si trouvé, continuer sur cette fréquence (comme scan406.pl)
             if not trouve:
                 print("[DEMOD] Aucune trame, retour au scan...")
+                time.sleep(3)  # Délai pour libération du dongle
                 break
+            else:
+                # Trame trouvée → Destruction explicite du flowgraph avant nouvelle capture
+                try:
+                    if 'tb' in locals():
+                        del tb
+                    time.sleep(2)  # Laisser le temps au dongle de se libérer complètement
+                except:
+                    pass
             # Si trouvé, boucle et refait une capture sur la même fréquence
 
     # Nettoyage final
