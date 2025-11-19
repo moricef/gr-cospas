@@ -1,0 +1,103 @@
+[CONVERT] Bits lus: 144
+
+[TRAME 1] LONGUE - 144 bits:
+  Bits 1-15  (Preamble):  111111111111111
+  Bits 16-24 (Frame sync): 000101111
+  Bits 25-144 (Message):   100011100011100100000100100011010001010110001010110000000001111011111111000101111100011100011100100000100100011010001010
+  Hex: FFFE2F8E39048D158AC01EFF17C71C82468A
+  
+  
+  [CONVERT] Bits lus: 280
+
+[TRAME 1] LONGUE - 144 bits:
+  Bits 1-15  (Preamble):  111111111111111
+  Bits 16-24 (Frame sync): 000101111
+  Bits 25-144 (Message):   100011100011100100000100100011010001010110001010110000000001111000111010101001001000001010000101011010000110100111111111
+  Hex: FFFE2F8E39048D158AC01E3AA482856869FF
+
+[TRAME 2] COURTE - 112 bits:
+  Bits 1-15  (Preamble):  111111100010111
+  Bits 16-24 (Frame sync): 110001110
+  Bits 25-112 (Message):   0011100100000100100011010001010110001010110000000001111000111010101001001000001010000101
+  Hex: FE2F8E39048D158AC01E3AA48285
+
+[TRAME INCOMPLETE] 24 bits:
+  Bits: 011010000010010011001110
+
+[CONVERT] Trames longues (144 bits): 1
+[CONVERT] Trames courtes (112 bits): 1
+[CONVERT] Fichier texte créé: /tmp/tmpzzorhixm.bits.txt (280 bits)
+[ERROR] dec406 introuvable: /home/fab2/Developpement/COSPAS-SARSAT/balise_406MHz/dec406_V10.2/build/dec406
+
+[TEST] Fichiers temporaires:
+  Bits bruts: /tmp/tmpzzorhixm.bits
+  Bits texte: /tmp/tmpzzorhixm.bits.txt
+[BPSK_DEMOD] Final: 2 bursts détectés[CONVERT] Bits lus: 144
+
+[TRAME 1] LONGUE - 144 bits:
+  Bits 1-15  (Preamble):  111111111111111
+  Bits 16-24 (Frame sync): 000101111
+  Bits 25-144 (Message):   100011100011100100000100100011010001010110001010110000000001111011111111000101111100011100011100100000100100011010001010
+  Hex: FFFE2F8E39048D158AC01EFF17C71C82468A
+
+[CONVERT] Trames longues (144 bits): 1
+[CONVERT] Trames courtes (112 bits): 0
+[CONVERT] Fichier texte créé: /tmp/tmpr1qfq3vi.bits.txt (144 bits)
+[ERROR] dec406 introuvable: /home/fab2/Developpement/COSPAS-SARSAT/balise_406MHz/dec406_V10.2/build/dec406
+
+[TEST] Fichiers temporaires:
+  Bits bruts: /tmp/tmpr1qfq3vi.bits
+  Bits texte: /tmp/tmpr1qfq3vi.bits.txt
+[BPSK_DEMOD] Final: 1 bursts détectés
+
+[TEST] Démodulation terminée
+
+[CONVERT] Bits lus: 278
+
+[TRAME 1] LONGUE - 144 bits:
+  Bits 1-15  (Preamble):  111111111111111
+  Bits 16-24 (Frame sync): 000101111
+  Bits 25-144 (Message):   100011100011100100000100100011010001010110001010110000000001111000111010101001001000001010000101011010000110111111111111
+  Hex: FFFE2F8E39048D158AC01E3AA48285686FFF
+
+[TRAME 2] COURTE - 112 bits:
+  Bits 1-15  (Preamble):  111110001011111
+  Bits 16-24 (Frame sync): 000111000
+  Bits 25-112 (Message):   1110010000010010001101000101011000101011000000000111100011101010100100100000101000010101
+  Hex: F8BE38E41234562B0078EA920A15
+
+[TRAME INCOMPLETE] 22 bits:
+  Bits: 1010000010010011001110
+
+[CONVERT] Trames longues (144 bits): 1
+[CONVERT] Trames courtes (112 bits): 1
+[CONVERT] Fichier texte créé: /tmp/tmpggz6zpzh.bits.txt (278 bits)
+[ERROR] dec406 introuvable: /home/fab2/Developpement/COSPAS-SARSAT/balise_406MHz/dec406_V10.2/build/dec406
+
+[TEST] Fichiers temporaires:
+  Bits bruts: /tmp/tmpggz6zpzh.bits
+  Bits texte: /tmp/tmpggz6zpzh.bits.txt
+[BPSK_DEMOD] Final: 2 bursts détectés
+
+[TEST] Démodulation terminée
+
+[CONVERT] Bits lus: 208
+
+[TRAME 1] LONGUE - 144 bits:
+  Bits 1-15  (Preamble):  111111111111111
+  Bits 16-24 (Frame sync): 000101111
+  Bits 25-144 (Message):   100011100011100100000100100011010001010110001010110000000001111000111010101001001000001010000101011010000110111111111111
+  Hex: FFFE2F8E39048D158AC01E3AA48285686FFF
+
+[TRAME INCOMPLETE] 64 bits:
+  Bits: 1111100010111110001110000000000000000001100001100110011111111011
+
+[CONVERT] Trames longues (144 bits): 1
+[CONVERT] Trames courtes (112 bits): 0
+[CONVERT] Fichier texte créé: /tmp/tmpavzj59yo.bits.txt (208 bits)
+[ERROR] dec406 introuvable: /home/fab2/Developpement/COSPAS-SARSAT/balise_406MHz/dec406_V10.2/build/dec406
+
+[TEST] Fichiers temporaires:
+  Bits bruts: /tmp/tmpavzj59yo.bits
+  Bits texte: /tmp/tmpavzj59yo.bits.txt
+[BPSK_DEMOD] Final: 2 bursts détectés

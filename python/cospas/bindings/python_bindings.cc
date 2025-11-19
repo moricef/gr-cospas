@@ -21,7 +21,9 @@ namespace py = pybind11;
 // Please do not delete
 /**************************************/
 // BINDING_FUNCTION_PROTOTYPES(
-    void bind_cospas_sarsat_decoder(py::module& m);
+    void bind_cospas_sarsat_demodulator(py::module& m);
+    void bind_cospas_burst_detector(py::module& m);
+    void bind_burst_router(py::module& m);
 // ) END BINDING_FUNCTION_PROTOTYPES
 
 
@@ -50,6 +52,8 @@ PYBIND11_MODULE(cospas_python, m)
     // Please do not delete
     /**************************************/
     // BINDING_FUNCTION_CALLS(
-    bind_cospas_sarsat_decoder(m);
+    bind_cospas_sarsat_demodulator(m);
+    bind_cospas_burst_detector(m);
+    bind_burst_router(m);
     // ) END BINDING_FUNCTION_CALLS
 }

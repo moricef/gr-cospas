@@ -25,7 +25,10 @@ include(GrPybind)
 ########################################################################
 
 list(APPEND cospas_python_files
-    cospas_sarsat_decoder_python.cc python_bindings.cc)
+    cospas_sarsat_demodulator_python.cc
+    cospas_burst_detector_python.cc
+    burst_router_python.cc
+    python_bindings.cc)
 
 gr_pybind_make_oot(cospas ../../.. gr::cospas "${cospas_python_files}")
 

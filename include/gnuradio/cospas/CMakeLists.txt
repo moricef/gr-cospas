@@ -10,4 +10,6 @@
 # Install public header files
 ########################################################################
 install(FILES api.h
-    cospas_sarsat_decoder.h DESTINATION include/gnuradio/cospas)
+    cospas_sarsat_demodulator.h
+    cospas_burst_detector.h
+    burst_router.h DESTINATION include/gnuradio/cospas)

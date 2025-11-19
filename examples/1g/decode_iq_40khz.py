@@ -93,7 +93,7 @@ def main():
                         print(f"Correspondance: {expected_hex}")
                         print(f"  Octets corrects: {matches}/{len(expected)}")
                         if matches == len(expected):
-                            print("  🎉 DÉCODAGE PARFAIT!")
+                            print("Décodage OK")
                         break
         else:
             print("\n❌ Aucune donnée décodée")

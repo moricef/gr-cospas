@@ -34,4 +34,4 @@ add_custom_target(
     copy_module_for_tests ALL
     COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}
             ${PROJECT_BINARY_DIR}/test_modules/gnuradio/cospas/)
-GR_ADD_TEST(qa_cospas_sarsat_decoder ${PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/qa_cospas_sarsat_decoder.py)
+GR_ADD_TEST(qa_cospas_sarsat_demodulator ${PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/qa_cospas_sarsat_demodulator.py)

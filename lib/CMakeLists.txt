@@ -12,7 +12,11 @@
 include(GrPlatform) #define LIB_SUFFIX
 
 list(APPEND cospas_sources
-    cospas_sarsat_decoder_impl.cc)
+    cospas_sarsat_demodulator_impl.cc
+    cospas_burst_detector_impl.cc
+    burst_router_impl.cc
+    dec406/dec406_v1g.c
+    dec406/display_utils.c)
 
 set(cospas_sources
     "${cospas_sources}"
@@ -27,7 +31,8 @@ target_link_libraries(gnuradio-cospas gnuradio::gnuradio-runtime)
 target_include_directories(
     gnuradio-cospas
     PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>
-    PUBLIC $<INSTALL_INTERFACE:include>)
+    PUBLIC $<INSTALL_INTERFACE:include>
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/dec406)
 set_target_properties(gnuradio-cospas PROPERTIES DEFINE_SYMBOL "gnuradio_cospas_EXPORTS")
 
 if(APPLE)

@@ -7,4 +7,4 @@
 #
 
 install(FILES
-    cospas_cospas_sarsat_decoder.block.yml DESTINATION share/gnuradio/grc/blocks)
+    cospas_cospas_sarsat_demodulator.block.yml DESTINATION share/gnuradio/grc/blocks)

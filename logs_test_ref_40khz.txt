@@ -1,0 +1,79 @@
+[BPSK_DEMOD] Démodulateur initialisé
+[BPSK_DEMOD] Sample rate: 40000 Hz
+[BPSK_DEMOD] Échantillons/bit: 100
+[BPSK_DEMOD] Buffer minimum: 20800 échantillons
+[DEBUG] work() #0: noutput_items=4096
+[DEBUG] work() #1: noutput_items=4095
+[DEBUG] estimate_freq_offset(): offset=0 Hz, |offset|=0
+[DEBUG] Offset trop faible (0 Hz) - pas de verrouillage
+[COSPAS] Porteuse détectée après 4800 échantillons
+[DEBUG] estimate_freq_offset(): offset=0 Hz, |offset|=0
+[DEBUG] Offset trop faible (0 Hz) - pas de verrouillage
+[DEBUG] estimate_freq_offset(): offset=0 Hz, |offset|=0
+[DEBUG] Offset trop faible (0 Hz) - pas de verrouillage
+[DEBUG] estimate_freq_offset(): offset=0 Hz, |offset|=0
+[DEBUG] Offset trop faible (0 Hz) - pas de verrouillage
+[DEBUG] estimate_freq_offset(): offset=-1.07752 Hz, |offset|=1.07752
+[DEBUG] Offset trop faible (-1.07752 Hz) - pas de verrouillage
+[COSPAS] ✓ Préambule OK (6400 ech, std=0), modulation détectée (std=1.1)
+[DEMOD] Début STATE_DEMODULATE
+[DEMOD] Échantillonnage #0: phase[0]=1.1, phase[50]=0, diff=-1.1
+[DEMOD] Bit #1: 1
+[DEMOD] Échantillonnage #0: phase[0]=1.1, phase[50]=0, diff=-1.1
+[DEMOD] Bit #2: 1
+[DEMOD] Échantillonnage #0: phase[0]=1.1, phase[50]=0, diff=-1.1
+[DEMOD] Bit #3: 1
+[DEMOD] Bit #4: 1
+[DEMOD] Bit #5: 1
+[DEMOD] Bit #6: 1
+[DEMOD] Bit #7: 1
+[DEMOD] Bit #8: 1
+[DEMOD] Bit #9: 1
+[DEMOD] Bit #10: 1
+[DEMOD] Bit #11: 1
+[DEMOD] Bit #12: 1
+[DEMOD] Bit #13: 1
+[DEMOD] Bit #14: 1
+[DEMOD] Bit #15: 0
+[DEMOD] Bit #16: 1
+[DEMOD] Bit #17: 1
+[DEBUG] work() #2: noutput_items=4079
+[DEMOD] Bit #18: 0
+[DEMOD] Bit #19: 1
+[DEMOD] Bit #20: 0
+[DEMOD] Bit #21: 0
+[DEMOD] Bit #22: 0
+[DEMOD] Bit #23: 0
+[DEMOD] Bit #24: 1
+[DEMOD] Bit #25: 0
+[DEMOD] Bit #26: 0
+[DEMOD] Bit #27: 0
+[DEMOD] Bit #28: 1
+[DEMOD] Bit #29: 1
+[DEMOD] Bit #30: 1
+[DEBUG] work() #3: noutput_items=4071
+[DEBUG] work() #4: noutput_items=4080
+[COSPAS] Fin burst: 142 bits
+[DEBUG] estimate_freq_offset(): offset=1.00055 Hz, |offset|=1.00055
+[DEBUG] Offset trop faible (1.00055 Hz) - pas de verrouillage
+[COSPAS] Porteuse détectée après 4800 échantillons
+[DEBUG] estimate_freq_offset(): offset=-1.00055 Hz, |offset|=1.00055
+[DEBUG] Offset trop faible (-1.00055 Hz) - pas de verrouillage
+[DEBUG] estimate_freq_offset(): offset=-1.00055 Hz, |offset|=1.00055
+[DEBUG] Offset trop faible (-1.00055 Hz) - pas de verrouillage
+[DEBUG] estimate_freq_offset(): offset=-1.00055 Hz, |offset|=1.00055
+[DEBUG] Offset trop faible (-1.00055 Hz) - pas de verrouillage
+[DEBUG] estimate_freq_offset(): offset=-1.00055 Hz, |offset|=1.00055
+[DEBUG] Offset trop faible (-1.00055 Hz) - pas de verrouillage
+[DEBUG] estimate_freq_offset(): offset=0 Hz, |offset|=0
+[DEBUG] Offset trop faible (0 Hz) - pas de verrouillage
+[DEBUG] estimate_freq_offset(): offset=0 Hz, |offset|=0
+[DEBUG] Offset trop faible (0 Hz) - pas de verrouillage
+[DEBUG] estimate_freq_offset(): offset=0 Hz, |offset|=0
+[DEBUG] Offset trop faible (0 Hz) - pas de verrouillage
+[DEBUG] estimate_freq_offset(): offset=0 Hz, |offset|=0
+[DEBUG] Offset trop faible (0 Hz) - pas de verrouillage
+[DEBUG] estimate_freq_offset(): offset=0 Hz, |offset|=0
+[DEBUG] Offset trop faible (0 Hz) - pas de verrouillage
+[DEBUG] estimate_freq_offset(): offset=0 Hz, |offset|=0
+[DEBUG] Offset trop faible (0 Hz) - pas de verrouillage
