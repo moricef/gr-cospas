@@ -19,7 +19,10 @@ add_subdirectory(bindings)
 ########################################################################
 # Install python sources
 ########################################################################
-gr_python_install(FILES __init__.py DESTINATION ${GR_PYTHON_DIR}/gnuradio/cospas)
+gr_python_install(FILES
+    __init__.py
+    cospas_generator.py
+    DESTINATION ${GR_PYTHON_DIR}/gnuradio/cospas)
 
 ########################################################################
 # Handle the unit tests
