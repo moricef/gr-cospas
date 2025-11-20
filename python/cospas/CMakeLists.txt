@@ -22,6 +22,7 @@ add_subdirectory(bindings)
 gr_python_install(FILES
     __init__.py
     cospas_generator.py
+    decode_monitor.py
     DESTINATION ${GR_PYTHON_DIR}/gnuradio/cospas)
 
 ########################################################################

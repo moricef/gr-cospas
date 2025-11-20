@@ -21,3 +21,4 @@ except ModuleNotFoundError:
 
 # import any pure python here
 from .cospas_generator import cospas_generator
+from .decode_monitor import decode_monitor

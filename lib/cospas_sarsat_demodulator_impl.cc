@@ -78,6 +78,9 @@ cospas_sarsat_demodulator_impl::cospas_sarsat_demodulator_impl(float sample_rate
         // Enregistrer le port de message pour recevoir les bursts
     message_port_register_in(pmt::mp("bursts"));
     set_msg_handler(pmt::mp("bursts"), [this](pmt::pmt_t msg) { this->handle_burst_message(msg); });
+
+    // Port de sortie pour signaler la fin du décodage
+    message_port_register_out(pmt::mp("decode_complete"));
     
     d_bit_buffer.resize(d_samples_per_bit, std::complex<float>(0, 0));
     d_phase_history.reserve(200);
@@ -646,6 +649,13 @@ int cospas_sarsat_demodulator_impl::process_accumulated_buffer(uint8_t* out, int
 
                             // Appel du décodeur COSPAS-SARSAT avec correction BCH
                             decode_1g(out + start_bit, d_bits_demodulated);
+
+                            // IMPORTANT: Flusher stdout AVANT d'envoyer le signal PMT
+                            // Garantit que tout le décodage est écrit dans le fichier
+                            fflush(stdout);
+
+                            // Signaler que le décodage est terminé
+                            message_port_pub(pmt::mp("decode_complete"), pmt::PMT_T);
                         }
 
                         reset_demodulator();
