@@ -22,6 +22,10 @@ dist/
 *.wav
 *.dat
 *.bin
+*.raw
+
+# Large binary files
+utils/reset_usb
 
 # Test logs
 /tmp/*.log
