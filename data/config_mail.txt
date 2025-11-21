@@ -1,4 +1,4 @@
-smtp_serveur=smtp.gmail.com:587
-utilisateur=fabrice.morel09@gmail.com
-password=nlowcaxutlyavjxx
-destinataires=fabrice.morel09@gmail.com
+smtp_serveur=smtp.example.com:587
+utilisateur=your.email@example.com
+password=aa11bb22cc33dd
+destinataires=alert@example.com
