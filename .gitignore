@@ -27,9 +27,12 @@ dist/
 # Large binary files
 utils/reset_usb
 
+# Configuration files (local settings)
+data/config_mail.txt
+
 # Test logs
 /tmp/*.log
-examples/*.log
+*.log
 
 # Generated files
 *.so
@@ -43,3 +46,6 @@ examples/*.log
 *~
 *.bak
 *.orig
+
+# Examples
+examples/*

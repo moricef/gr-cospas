@@ -1,4 +1,0 @@
-smtp_serveur=smtp.example.com:587
-utilisateur=your.email@example.com
-password=aa11bb22cc33dd
-destinataires=alert@example.com
