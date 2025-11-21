@@ -23,27 +23,86 @@ python3 scripts/scan406_iq.py 406.000 406.100 55 7
 
 ## Architecture
 
+### Signal Processing Chain
+
 ```
-RTL-SDR → Decimator → Lowpass → Burst Detector → BPSK Demod → CRC Check → Alert
+RTL-SDR (240 kHz)
+    ↓ Decimation (÷6)
+40 kHz I/Q samples
+    ↓ Lowpass filter (20 kHz)
+Filtered signal
+    ↓ Normalizer (×0.15)
+Normalized I/Q
+    ↓ Burst Detector (circular buffer 2s, threshold 0.05)
+Detected bursts
+    ↓ Burst Router (1G/2G classification)
+1G bursts only
+    ↓ BPSK Demodulator (carrier tracking, phase lock)
+Demodulated bits
+    ↓ Frame Parser (CRC validation)
+Decoded frame (112 or 144 bits)
+    ↓ Channel Filter (authorized frequencies)
+Email Alert
 ```
 
-## scan406_iq.py Usage
+### Core Components
+
+**C++ Blocks** (`lib/`):
+- `cospas_burst_detector`: Detects signal bursts in circular buffer
+- `burst_router`: Routes bursts to 1G or 2G demodulator
+- `cospas_sarsat_demodulator`: BPSK demodulation with 5-state FSM
+
+**Python Modules** (`python/cospas/`):
+- `cospas_generator`: Beacon signal synthesis (test)
+- `decode_monitor`: Frame completion tracking via PMT messages
+
+**Scanner** (`scripts/`):
+- `scan406_iq.py`: Production scanner with continuous operation
+
+## Usage
+
+### Basic Scan
+
+Scan a frequency range and monitor for beacons:
 
 ```bash
-python3 scripts/scan406_iq.py <f1_MHz> <f2_MHz> [ppm] [snr_threshold]
-
-# Examples:
-python3 scripts/scan406_iq.py 406.000 406.100 55 7  # Scan range
-python3 scripts/scan406_iq.py 406.040 406.040 55 7  # Fixed frequency
+python3 scripts/scan406_iq.py 406.000 406.100 55 7
 ```
 
-The scanner performs:
-1. Frequency scan with rtl_power (55s)
-2. Continuous capture on detected frequency (56s)
-3. Immediate email alerts on beacon detection
-4. Automatic USB reset between cycles
+**Arguments:**
+- `f1_MHz`: Start frequency (MHz)
+- `f2_MHz`: End frequency (MHz) - use same as f1 for fixed frequency
+- `ppm`: RTL-SDR frequency correction (default: 0)
+- `snr_threshold`: Detection threshold in dB above noise (default: 7)
 
-## Email Configuration
+**Examples:**
+
+```bash
+# Scan 406.0-406.1 MHz with 55 ppm correction
+python3 scripts/scan406_iq.py 406.000 406.100 55 7
+
+# Monitor fixed frequency 406.040 MHz
+python3 scripts/scan406_iq.py 406.040 406.040 55 7
+
+# More sensitive detection (5 dB threshold)
+python3 scripts/scan406_iq.py 406.000 406.100 55 5
+```
+
+### Operation Cycle
+
+The scanner runs in continuous cycles:
+
+1. **Frequency Scan** (55s): `rtl_power` scans the range and finds strongest signal
+2. **Signal Capture** (56s): Flowgraph opens and captures continuously
+   - Multiple frames can be detected during this period
+   - Email sent immediately after each frame detection
+   - RTL-SDR stays open for stability
+3. **USB Reset**: Device reset between cycles to prevent lock-ups
+4. **Loop**: Returns to step 1
+
+## Configuration
+
+### Email Alerts
 
 Create `data/config_mail.txt`:
 
@@ -52,7 +111,45 @@ utilisateur=your.email@gmail.com
 password=app_password
 destinataires=alert@example.com
 smtp_serveur=smtp.gmail.com:587
+log_file=../data/mail.log
 ```
+
+**Note**: For Gmail, use an [App Password](https://support.google.com/accounts/answer/185833) instead of your regular password.
+
+### RTL-SDR Setup
+
+**Find PPM correction:**
+```bash
+rtl_test -p
+# Let it run for ~5 minutes, note the final PPM value
+```
+
+**Test RTL-SDR:**
+```bash
+rtl_test -t
+rtl_sdr -f 406040000 -s 240000 - | hexdump -C | head
+```
+
+**Reset USB device** (if needed):
+```bash
+sudo ./utils/reset_usb /dev/bus/usb/001/XXX
+```
+
+### Channel Filtering
+
+Only authorized COSPAS-SARSAT channels trigger email alerts:
+
+| Channel | Frequency | Status | Alert |
+|---------|-----------|--------|-------|
+| A | 406.022 MHz | System/Calibration | ❌ Filtered |
+| B | 406.025 MHz | Active (TA < 2002) | ✅ |
+| C | 406.028 MHz | Active (TA < 2007) | ✅ |
+| D | 406.031 MHz | Active (TA < 2025) | ✅ |
+| F | 406.037 MHz | Active (TA < 2012) | ✅ |
+| G | 406.040 MHz | Active (TA < 2017) | ✅ |
+| S | 406.076 MHz | Active (TA ≥ 2025) | ✅ |
+
+Test channel at **403.040 MHz** is enabled for development (remove in production).
 
 ## Project Structure
 
@@ -64,10 +161,64 @@ examples/1g/           # 1G tests (100% deterministic)
 examples/2g/           # 2G (in development)
 ```
 
+## Troubleshooting
+
+### No Signal Detected
+
+**Check RTL-SDR:**
+```bash
+rtl_test -t  # Device should be found
+```
+
+**Verify frequency and PPM:**
+```bash
+# Test with known beacon or use gqrx to find exact frequency
+python3 scripts/scan406_iq.py 406.040 406.040 55 7
+```
+
+**Lower SNR threshold:**
+```bash
+# Try 5 dB instead of 7 dB for weak signals
+python3 scripts/scan406_iq.py 406.000 406.100 55 5
+```
+
+### CRC Errors / Failed Decoding
+
+- **Check antenna**: Use proper 406 MHz antenna (1/4 wave = 18.4 cm)
+- **Reduce interference**: Move away from strong RF sources
+- **Verify PPM correction**: Run `rtl_test -p` for accurate value
+
+### RTL-SDR Not Found
+
+```bash
+# Check device
+lsusb | grep Realtek
+
+# Blacklist DVB-T driver
+echo 'blacklist dvb_usb_rtl28xxu' | sudo tee /etc/modprobe.d/blacklist-rtl.conf
+sudo rmmod dvb_usb_rtl28xxu
+```
+
+### Email Not Sending
+
+**Test sendemail:**
+```bash
+sendemail -f from@example.com -t to@example.com \
+  -u "Test Subject" -m "Test message" \
+  -s smtp.gmail.com:587 \
+  -xu your.email@gmail.com -xp your_app_password \
+  -o tls=yes
+```
+
+**Check logs:**
+```bash
+tail -f data/mail.log
+```
+
 ## Documentation
 
 - **1G Examples**: `examples/1g/README.md`
-- **Architecture**: `docs/ARCHITECTURE_CIBLE.md`
+- **Architecture Details**: `docs/ARCHITECTURE_CIBLE.md`
 - **2G Status**: `docs/ETAT_GENERATEUR_2G.md`
 
 ## Author
