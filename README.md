@@ -15,7 +15,14 @@ python3 scripts/scan406_iq.py 406.000 406.100 55 7
 
 ## Features
 
-- **1G Beacons**: 92-100% success rate (BPSK, 400 bps)
+- **1G Beacons**: 80-100% success rate (BPSK, 400 bps)
+  - Strong signals (local): 100% success
+  - Weak signals (80km distance): 80-100% success
+- **Autocorrelation burst detection**: Inspired by dec406_V7 algorithm
+- **Adaptive thresholds**: Automatic adjustment based on signal strength (SNR)
+  - Strong signals: strict phase variance threshold (0.15 rad)
+  - Weak signals: relaxed threshold (0.7 rad)
+  - Linear interpolation for intermediate levels
 - **Real-time I/Q**: Direct RTL-SDR integration
 - **Auto-scan**: rtl_power frequency detection
 - **Email alerts**: Immediate notification on detection
@@ -33,11 +40,11 @@ RTL-SDR (240 kHz)
 Filtered signal
     ↓ Normalizer (×0.15)
 Normalized I/Q
-    ↓ Burst Detector (circular buffer 2s, threshold 0.05)
+    ↓ Burst Detector (autocorrelation, adaptive threshold)
 Detected bursts
     ↓ Burst Router (1G/2G classification)
 1G bursts only
-    ↓ BPSK Demodulator (carrier tracking, phase lock)
+    ↓ BPSK Demodulator (adaptive phase variance, freq tracking)
 Demodulated bits
     ↓ Frame Parser (CRC validation)
 Decoded frame (112 or 144 bits)
@@ -48,9 +55,13 @@ Email Alert
 ### Core Components
 
 **C++ Blocks** (`lib/`):
-- `cospas_burst_detector`: Detects signal bursts in circular buffer
+- `cospas_burst_detector`: Autocorrelation-based burst detection (dec406_V7 algorithm)
 - `burst_router`: Routes bursts to 1G or 2G demodulator
-- `cospas_sarsat_demodulator`: BPSK demodulation with 5-state FSM
+- `cospas_sarsat_demodulator`: BPSK demodulation with adaptive thresholds
+  - Automatic phase variance adjustment (0.15-0.7 rad)
+  - Frequency offset correction with PLL
+  - Bit synchronization validation (≥13/15 bits)
+- `dec406_v1g`: 1G frame decoder with orbitography support
 
 **Python Modules** (`python/cospas/`):
 - `cospas_generator`: Beacon signal synthesis (test)
@@ -87,6 +98,24 @@ python3 scripts/scan406_iq.py 406.040 406.040 55 7
 # More sensitive detection (5 dB threshold)
 python3 scripts/scan406_iq.py 406.000 406.100 55 5
 ```
+
+## Performance
+
+### Validation Results
+
+Tested with RTL-SDR on real CNES test beacons:
+
+| Scenario | Success Rate | Notes |
+|----------|--------------|-------|
+| **Local (403.040 MHz)** | 100% | Strong signal, 6/6 bursts decoded |
+| **Distant (406.022 MHz, 80km)** | 80-100% | Weak signal, adaptive threshold at 0.7 rad |
+| **Distant (406.051 MHz)** | 33% | Very weak signal, new beacon detected (Country 228) |
+
+**Key Features:**
+- **Automatic adaptation**: No manual tuning required
+- **Robust to noise**: Correct rejection of false positives (residual >0.3 rad)
+- **CRC validation**: All decoded frames pass CRC1 check
+- **Multiple beacons**: Simultaneous detection of 3 different beacons
 
 ### Operation Cycle
 
