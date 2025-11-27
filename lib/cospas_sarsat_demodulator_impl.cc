@@ -239,8 +239,7 @@ int cospas_sarsat_demodulator_impl::process_accumulated_buffer(uint8_t* out, int
                 if (d_debug_mode && samples_processed == 5000) {
                     std::cout << "[DEBUG] Sample #5000: |sample|=" << std::abs(sample); 
                 }
-                // Vérifier d'abord si on a un signal fort (pour éviter d'estimer sur le bruit)
-                if (std::abs(sample) > 0.05f) {  // Seuil d'amplitude
+                if (std::abs(sample) > 0.05f) {
                     strong_samples_in_loop++;
 
                     // Accumuler la phase
@@ -270,9 +269,9 @@ int cospas_sarsat_demodulator_impl::process_accumulated_buffer(uint8_t* out, int
                         if (diff_var < 0) diff_var = 0;
                         float diff_std = std::sqrt(diff_var);
 
-                        // Porteuse : diff_std < 0.1 rad (frequence constante)
+                        // Porteuse : diff_std < 0.15 rad (frequence constante + bruit faible SNR)
                         // BPSK : diff_std > 0.3 rad (sauts de phase)
-                        if (diff_std > 0.1f) {
+                        if (diff_std > 0.15f) {
                             d_phase_history.clear();
                             if (d_debug_mode && samples_processed % 10000 == 0) {
                                 std::cout << "[DEBUG] Phase diff variance too high (" << diff_std
@@ -351,7 +350,6 @@ int cospas_sarsat_demodulator_impl::process_accumulated_buffer(uint8_t* out, int
                 
             case STATE_CARRIER_TRACKING:
                 {
-                    // Continuer a accumuler la phase pour tracking
                     if (std::abs(sample) > 0.05f) {
                         d_phase_history.push_back(phase);
                         if (d_phase_history.size() > 200) {
@@ -477,37 +475,47 @@ int cospas_sarsat_demodulator_impl::process_accumulated_buffer(uint8_t* out, int
                     }
 
                     if (d_total_bit_count >= BIT_SYNC_BITS) {
-                        // Calculer le timing réel a partir des transitions detectees
-                        if (d_transition_positions.size() >= 4) {
-                            // Calculer intervalles entre transitions consécutives
-                            float interval_sum = 0;
-                            int interval_count = 0;
-                            for (size_t i = 1; i < d_transition_positions.size(); i++) {
-                                int interval = d_transition_positions[i] - d_transition_positions[i-1];
-                                // Intervalle attendu: 50 samples (demi-bit)
-                                if (interval > 30 && interval < 70) {
-                                    interval_sum += interval;
-                                    interval_count++;
+                        // Valider bit sync: tolerer max 2 erreurs sur 15 bits
+                        if (d_preamble_ones >= 13) {
+                            // Calculer le timing réel a partir des transitions detectees
+                            if (d_transition_positions.size() >= 4) {
+                                // Calculer intervalles entre transitions consécutives
+                                float interval_sum = 0;
+                                int interval_count = 0;
+                                for (size_t i = 1; i < d_transition_positions.size(); i++) {
+                                    int interval = d_transition_positions[i] - d_transition_positions[i-1];
+                                    // Intervalle attendu: 50 samples (demi-bit)
+                                    if (interval > 30 && interval < 70) {
+                                        interval_sum += interval;
+                                        interval_count++;
+                                    }
+                                }
+                                if (interval_count > 0) {
+                                    float avg_half_bit = interval_sum / interval_count;
+                                    d_measured_samples_per_bit = avg_half_bit * 2.0f;
+
+                                    if (d_debug_mode) {
+                                        std::cout << "[COSPAS] Timing recovery: " << d_transition_positions.size()
+                                                  << " transitions, interval moyen=" << avg_half_bit
+                                                  << " samples, samples/bit=" << d_measured_samples_per_bit
+                                                  << " (nominal=" << d_samples_per_bit << ")" << std::endl;
+                                    }
                                 }
                             }
-                            if (interval_count > 0) {
-                                float avg_half_bit = interval_sum / interval_count;
-                                d_measured_samples_per_bit = avg_half_bit * 2.0f;
 
-                                if (d_debug_mode) {
-                                    std::cout << "[COSPAS] Timing recovery: " << d_transition_positions.size()
-                                              << " transitions, interval moyen=" << avg_half_bit
-                                              << " samples, samples/bit=" << d_measured_samples_per_bit
-                                              << " (nominal=" << d_samples_per_bit << ")" << std::endl;
-                                }
+                            d_state = STATE_FRAME_SYNC;
+
+                            if (d_debug_mode) {
+                                std::cout << "[COSPAS] Bit sync complet (" << d_preamble_ones
+                                          << " '1' sur " << BIT_SYNC_BITS << " bits)" << std::endl;
                             }
-                        }
-
-                        d_state = STATE_FRAME_SYNC;
-
-                        if (d_debug_mode) {
-                            std::cout << "[COSPAS] Bit sync complet (" << d_preamble_ones
-                                      << " '1' sur " << BIT_SYNC_BITS << " bits)" << std::endl;
+                        } else {
+                            // Bit sync invalide: trop d'erreurs
+                            if (d_debug_mode) {
+                                std::cout << "[COSPAS] Bit sync FAIL (" << d_preamble_ones
+                                          << " '1' sur " << BIT_SYNC_BITS << " bits) - reset" << std::endl;
+                            }
+                            reset_demodulator();
                         }
                     }
 
