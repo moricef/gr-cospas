@@ -35,6 +35,12 @@ private:
     bool d_threshold_initialized; // Indicateur de calcul du seuil
     std::vector<float> d_amplitude_buffer; // Buffer pour calcul statistique
 
+    // Autocorrélation
+    int d_samples_per_bit;
+    std::vector<float> d_correlation_buffer;
+    int d_buffer_index;
+    float compute_autocorrelation();
+
     // Buffer circulaire
     std::deque<gr_complex> d_circular_buffer;
 

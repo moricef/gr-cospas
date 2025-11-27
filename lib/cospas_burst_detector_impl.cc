@@ -42,19 +42,20 @@ cospas_burst_detector_impl::cospas_burst_detector_impl(float sample_rate,
       d_debug_mode(debug_mode),
       d_adaptive_threshold(0.0f),
       d_threshold_initialized(false),
+      d_samples_per_bit(static_cast<int>(sample_rate / 400.0f)),
+      d_buffer_index(0),
       d_state(IDLE),
       d_silence_count(0),
       d_output_offset(0),
       d_bursts_detected(0)
 {
-    // Calculer les tailles
     d_buffer_size = static_cast<int>((sample_rate * buffer_duration_ms) / 1000.0f);
     d_min_burst_samples = static_cast<int>((sample_rate * min_burst_duration_ms) / 1000.0f);
 
-    // Réserver le buffer pour calcul du seuil adaptatif (500ms de signal)
-    // Plus long pour capturer la dynamique réelle du signal, pas juste le bruit initial
     int calibration_samples = static_cast<int>(sample_rate * 0.5f);
     d_amplitude_buffer.reserve(calibration_samples);
+
+    d_correlation_buffer.resize(2 * d_samples_per_bit, 0.0f);
 
     // Enregistrer message port pour envoi asynchrone de bursts
     message_port_register_out(pmt::mp("bursts"));
@@ -76,73 +77,79 @@ cospas_burst_detector_impl::~cospas_burst_detector_impl()
 {
 }
 
+float cospas_burst_detector_impl::compute_autocorrelation()
+{
+    float mean = 0.0f;
+    for (int i = 0; i < 2 * d_samples_per_bit; i++) {
+        mean += d_correlation_buffer[i];
+    }
+    mean /= (2 * d_samples_per_bit);
+
+    float correlation = 0.0f;
+    for (int i = 0; i < d_samples_per_bit; i++) {
+        int idx1 = (d_buffer_index + i) % (2 * d_samples_per_bit);
+        int idx2 = (d_buffer_index + i + d_samples_per_bit) % (2 * d_samples_per_bit);
+        correlation += (d_correlation_buffer[idx1] - mean) * (d_correlation_buffer[idx2] - mean);
+    }
+
+    return std::abs(correlation);
+}
+
 void cospas_burst_detector_impl::process_sample(const gr_complex& sample)
 {
     float amplitude = std::abs(sample);
 
-    // Phase de calibration : collecter les amplitudes pour calculer le seuil adaptatif
+    d_correlation_buffer[d_buffer_index] = amplitude;
+    d_buffer_index = (d_buffer_index + 1) % (2 * d_samples_per_bit);
+
+    float correlation = compute_autocorrelation();
+
     if (!d_threshold_initialized) {
-        d_amplitude_buffer.push_back(amplitude);
+        d_amplitude_buffer.push_back(correlation);
 
-        // Une fois le buffer de calibration rempli, calculer le seuil
         if (d_amplitude_buffer.size() >= d_amplitude_buffer.capacity()) {
-            // Utiliser le max pour détecter le niveau du signal le plus fort
-            // Ceci permet de détecter les bursts même s'ils arrivent tôt
-            float max_amp = *std::max_element(d_amplitude_buffer.begin(), d_amplitude_buffer.end());
+            float max_corr = *std::max_element(d_amplitude_buffer.begin(), d_amplitude_buffer.end());
+            d_adaptive_threshold = d_threshold_factor * max_corr;
 
-            // Seuil adaptatif : threshold_factor * max amplitude
-            d_adaptive_threshold = d_threshold_factor * max_amp;
-
-            // Seuil minimum : éviter un seuil trop bas si que du bruit
-            const float MIN_THRESHOLD = 0.01f;  // 1% d'amplitude
+            const float MIN_THRESHOLD = 0.0001f;
             if (d_adaptive_threshold < MIN_THRESHOLD) {
                 d_adaptive_threshold = MIN_THRESHOLD;
-                if (d_debug_mode) {
-                    std::cout << "[BURST_DETECTOR] Warning: low signal, using minimum threshold" << std::endl;
-                }
             }
 
             d_threshold_initialized = true;
 
             if (d_debug_mode) {
-                std::cout << "[BURST_DETECTOR] Calibration complete:" << std::endl;
-                std::cout << "  Max amplitude: " << max_amp << std::endl;
-                std::cout << "  Adaptive threshold: " << d_adaptive_threshold << std::endl;
+                std::cout << "[BURST_DETECTOR] Calibration:" << std::endl;
+                std::cout << "  Max correlation: " << max_corr << std::endl;
+                std::cout << "  Threshold: " << d_adaptive_threshold << std::endl;
             }
 
-            // Libérer la mémoire du buffer de calibration
             d_amplitude_buffer.clear();
             d_amplitude_buffer.shrink_to_fit();
         }
-        // Pendant la calibration, ne pas détecter de bursts
         return;
     }
 
     switch (d_state) {
         case IDLE:
-            // Chercher le debut d'un burst
-            if (amplitude > d_adaptive_threshold) {
+            if (correlation > d_adaptive_threshold) {
                 d_state = IN_BURST;
                 d_burst_samples.clear();
                 d_burst_samples.push_back(sample);
                 d_silence_count = 0;
 
                 if (d_debug_mode) {
-                    std::cout << "[BURST_DETECTOR] Burst started, amp=" << amplitude << std::endl;
+                    std::cout << "[BURST_DETECTOR] Burst started, corr=" << correlation << std::endl;
                 }
             }
             break;
 
         case IN_BURST:
-            // Stocker l'échantillon
             d_burst_samples.push_back(sample);
 
-            // Suivre le burst
-            if (amplitude > d_adaptive_threshold) {
-                // Signal fort : réinitialiser le compteur de silence
+            if (correlation > d_adaptive_threshold) {
                 d_silence_count = 0;
             } else {
-                // Signal faible : incrémenter le compteur de silence
                 d_silence_count++;
 
                 // Seuil de silence : 50ms (2000 samples @ 40kHz)
