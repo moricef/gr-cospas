@@ -209,6 +209,21 @@ int cospas_sarsat_demodulator_impl::process_accumulated_buffer(uint8_t* out, int
     }
     */
 
+    // Calculer seuil adaptatif de variance de phase basé sur le niveau du signal
+    // Signal fort (p95 >= 0.1) : seuil strict 0.15 rad (peu de bruit)
+    // Signal faible (p95 <= 0.02) : seuil relaxé 0.7 rad (beaucoup de bruit)
+    // Interpolation linéaire entre les deux pour s'adapter automatiquement
+    float phase_variance_threshold;
+    if (signal_p95 >= 0.1f) {
+        phase_variance_threshold = 0.15f;  // Signal fort (local)
+    } else if (signal_p95 <= 0.02f) {
+        phase_variance_threshold = 0.7f;   // Signal très faible (distant)
+    } else {
+        // Interpolation linéaire entre 0.02 et 0.1
+        float ratio = (signal_p95 - 0.02f) / (0.1f - 0.02f);
+        phase_variance_threshold = 0.7f - ratio * (0.7f - 0.15f);
+    }
+
     if (d_debug_mode) {
         // Compter combien d'echantillons sont > 0.05 apres AGC
         int strong_samples = 0;
@@ -218,7 +233,8 @@ int cospas_sarsat_demodulator_impl::process_accumulated_buffer(uint8_t* out, int
         std::cout << "[DEBUG] process_accumulated_buffer(): " << d_sample_accumulator.size()
                   << " echantillons, " << strong_samples << " > 0.05"
                   << " | AGC: p95=" << signal_p95 << ", gain=" << agc_gain
-                  << ", saturated=" << saturated_count << std::endl;
+                  << ", saturated=" << saturated_count
+                  << ", phase_var_threshold=" << phase_variance_threshold << " rad" << std::endl;
     }
 
     // Traiter les echantillons accumules avec la machine a états
@@ -267,9 +283,10 @@ int cospas_sarsat_demodulator_impl::process_accumulated_buffer(uint8_t* out, int
                         if (diff_var < 0) diff_var = 0;
                         float diff_std = std::sqrt(diff_var);
 
-                        // Porteuse : diff_std < 0.15 rad (frequence constante + bruit faible SNR)
-                        // BPSK : diff_std > 0.3 rad (sauts de phase)
-                        if (diff_std > 0.15f) {
+                        // Seuil adaptatif calculé selon le niveau du signal
+                        // Signal fort : seuil strict (0.15 rad)
+                        // Signal faible : seuil relaxé (0.7 rad)
+                        if (diff_std > phase_variance_threshold) {
                             d_phase_history.clear();
                             if (d_debug_mode && samples_processed % 10000 == 0) {
                                 std::cout << "[DEBUG] Phase diff variance too high (" << diff_std
