@@ -166,8 +166,6 @@ int cospas_sarsat_demodulator_impl::process_accumulated_buffer(uint8_t* out, int
     int bytes_produced = 0;
     int samples_processed = 0;
 
-    int strong_samples_in_loop = 0;  // Compteur pour debug
-
     // AGC: Normalisation automatique basée sur le niveau du signal
     // Utiliser le 95ème percentile au lieu du max pour robustesse a la saturation
     std::vector<float> amplitudes;
@@ -237,11 +235,11 @@ int cospas_sarsat_demodulator_impl::process_accumulated_buffer(uint8_t* out, int
             case STATE_CARRIER_SEARCH:
                 // Debug amplitude et phase apres correction
                 if (d_debug_mode && samples_processed == 5000) {
-                    std::cout << "[DEBUG] Sample #5000: |sample|=" << std::abs(sample); 
+                    std::cout << "[DEBUG] Sample #5000: |sample|=" << std::abs(sample);
                 }
-                if (std::abs(sample) > 0.05f) {
-                    strong_samples_in_loop++;
-
+                // Accumuler la phase de TOUS les échantillons (comme dec406_V7)
+                // Ne pas filtrer par amplitude, le signal faible doit être traité
+                {
                     // Accumuler la phase
                     d_phase_history.push_back(phase);
                     size_t max_history = d_freq_lock ? 200 : 5000;
@@ -347,14 +345,13 @@ int cospas_sarsat_demodulator_impl::process_accumulated_buffer(uint8_t* out, int
                     }
                 }
                 break;
-                
+
             case STATE_CARRIER_TRACKING:
                 {
-                    if (std::abs(sample) > 0.05f) {
-                        d_phase_history.push_back(phase);
-                        if (d_phase_history.size() > 200) {
-                            d_phase_history.erase(d_phase_history.begin());
-                        }
+                    // Continuer à accumuler la phase pour tracking (TOUS les échantillons)
+                    d_phase_history.push_back(phase);
+                    if (d_phase_history.size() > 200) {
+                        d_phase_history.erase(d_phase_history.begin());
                     }
 
                     // Correction adaptative DÉSACTIVÉE
@@ -693,7 +690,6 @@ int cospas_sarsat_demodulator_impl::process_accumulated_buffer(uint8_t* out, int
 
     if (d_debug_mode) {
         std::cout << "[DEBUG] process_accumulated_buffer() end: samples_processed=" << samples_processed
-                  << ", strong_samples_in_loop=" << strong_samples_in_loop
                   << ", phase_history.size()=" << d_phase_history.size()
                   << ", freq_lock=" << d_freq_lock << std::endl;
     }

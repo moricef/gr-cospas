@@ -862,16 +862,39 @@ static void decode_1g_frame(const char *frame, int frame_length, BeaconInfo1G *i
     // CRC verification
     int crc1_failed = test_crc1(frame);
     int crc2_failed = 0;
-    
+    int is_orbitography = 0;
+
     if (frame_length == LONG_FRAME_BITS) {
-        crc2_failed = test_crc2(frame);
+        // Check if it's orbitography (protocol 0b000 for user location)
+        // Orbitography beacons don't have position data, so CRC2 doesn't apply
+        int user_protocol_code = get_bits(frame, 36, 3);
+        is_orbitography = (user_protocol_code == 0b000);
+
+        if (!is_orbitography) {
+            // Only test CRC2 if NOT orbitography
+            crc2_failed = test_crc2(frame);
+        }
     }
 
+    // Display CRC status
     if (crc1_failed || crc2_failed) {
         info->crc_error = 1;
-        printf("CRC ERROR: CRC1=%s CRC2=%s\n", 
-               crc1_failed ? "FAIL" : "OK", 
-               crc2_failed ? "FAIL" : "OK");
+        if (is_orbitography) {
+            // Orbitography: only show CRC1 (CRC2 N/A)
+            printf("CRC: CRC1=%s\n", crc1_failed ? "FAIL" : "OK");
+        } else {
+            // Normal beacon: show both CRC1 and CRC2
+            printf("CRC ERROR: CRC1=%s CRC2=%s\n",
+                   crc1_failed ? "FAIL" : "OK",
+                   crc2_failed ? "FAIL" : "OK");
+        }
+    } else {
+        // All CRCs OK
+        if (is_orbitography) {
+            printf("CRC: CRC1=OK\n");
+        } else {
+            printf("CRC: CRC1=OK CRC2=OK\n");
+        }
     }
     
     // Decode country code (bits 27-36, positions 26-35 in 0-indexed)
