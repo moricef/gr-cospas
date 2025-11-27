@@ -511,179 +511,192 @@ def main():
             print(f"[SCAN] Mode fréquence fixe: {f1_mhz:.3f} MHz")
 
         # ÉTAPE 2: Capture et démodulation sur la fréquence trouvée
-        # Délai de sécurité avant ouverture du dongle
-        time.sleep(2)
+        # Boucle continue tant que des trames sont détectées (comme scan406.pl ligne 141-171)
+        trames_total_cycle = 0
+        capture_count = 0
 
-        utc_time = datetime.now(timezone.utc).strftime('%d %m %Y   %Hh%Mm%Ss')
-        print(f"\n[DEMOD] Lancement capture sur {freq_trouvee/1e6:.6f} MHz")
-        print(f"[DEMOD] {utc_time} UTC")
-        print(f"[DEMOD] Flowgraph ouvert pour {timeout_s}s (mode continu)")
+        while True:  # Boucle "do-while" comme scan406.pl
+            capture_count += 1
 
-        # Créer le récepteur UNE FOIS pour tout le cycle de 56s
-        try:
-            tb = cospas_receiver(freq_trouvee, 40000, ppm)
-        except Exception as e:
-            print(f"[ERREUR] Impossible de créer le récepteur: {e}")
-            time.sleep(10)
-            continue
+            # Délai de sécurité avant ouverture du dongle
+            if capture_count == 1:
+                time.sleep(2)
 
-        bits_file = tb.get_bits_file()
-        trames_trouvees = 0
+            utc_time = datetime.now(timezone.utc).strftime('%d %m %Y   %Hh%Mm%Ss')
+            print(f"\n[DEMOD] Capture #{capture_count} sur {freq_trouvee/1e6:.6f} MHz")
+            print(f"[DEMOD] {utc_time} UTC")
+            print(f"[DEMOD] Flowgraph ouvert pour {timeout_s}s (mode continu)")
 
-        # Créer fichier trame (.asc) pour capturer stdout du décodeur C++
-        trame_file = os.path.join(trame_dir, 'trame.asc')
+            # Créer le récepteur UNE FOIS pour tout le cycle de 56s
+            try:
+                tb = cospas_receiver(freq_trouvee, 40000, ppm)
+            except Exception as e:
+                print(f"[ERREUR] Impossible de créer le récepteur: {e}")
+                time.sleep(10)
+                break  # Sortir de la boucle continue, retour au scan
 
-        # Sauvegarder l'objet stdout Python original (une seule fois)
-        if 'stdout_original' not in locals():
-            stdout_original = sys.stdout
-            stdout_fd = stdout_original.fileno()
+            bits_file = tb.get_bits_file()
+            trames_trouvees = 0
 
-        try:
-            # Message avant redirection
-            print(f"[DEMOD] Capture en cours ({timeout_s}s)...")
-            sys.stdout.flush()
+            # Créer fichier trame (.asc) pour capturer stdout du décodeur C++
+            trame_file = os.path.join(trame_dir, 'trame.asc')
 
-            # Rediriger stdout vers fichier au niveau système
-            trame_fd = os.open(trame_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
-            stdout_backup_fd = os.dup(stdout_fd)
-            os.dup2(trame_fd, stdout_fd)
-            os.close(trame_fd)
+            # Sauvegarder l'objet stdout Python original (une seule fois)
+            if 'stdout_original' not in locals():
+                stdout_original = sys.stdout
+                stdout_fd = stdout_original.fileno()
 
-            # Écrire la fréquence au début du fichier (stdout maintenant redirigé)
-            print(f"Frequence: {freq_trouvee/1e6:.6f} MHz")
-            sys.stdout.flush()
+            try:
+                # Message avant redirection
+                print(f"[DEMOD] Capture en cours ({timeout_s}s)...")
+                sys.stdout.flush()
 
-            # Démarrer la capture (le flowgraph reste ouvert pendant 56s)
-            tb.start()
+                # Rediriger stdout vers fichier au niveau système
+                trame_fd = os.open(trame_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
+                stdout_backup_fd = os.dup(stdout_fd)
+                os.dup2(trame_fd, stdout_fd)
+                os.close(trame_fd)
 
-            # Capturer pendant 56s et envoyer email après chaque trame
-            start_time = time.time()
+                # Écrire la fréquence au début du fichier (stdout maintenant redirigé)
+                print(f"Frequence: {freq_trouvee/1e6:.6f} MHz")
+                sys.stdout.flush()
 
-            while time.time() - start_time < timeout_s:
-                # Poll rapide (100ms) pour détecter les trames
-                time.sleep(0.1)
+                # Démarrer la capture (le flowgraph reste ouvert pendant 56s)
+                tb.start()
 
-                # Vérifier si une trame est décodée (message PMT du C++)
-                if tb.is_decode_complete():
-                    trames_trouvees += 1
+                # Capturer pendant 56s et envoyer email après chaque trame
+                start_time = time.time()
 
-                    # Forcer sync du fichier trame avant de le traiter
-                    os.fsync(stdout_fd)
+                while time.time() - start_time < timeout_s:
+                    # Poll rapide (100ms) pour détecter les trames
+                    time.sleep(0.1)
 
-                    # Restaurer temporairement stdout pour afficher les messages
+                    # Vérifier si une trame est décodée (message PMT du C++)
+                    if tb.is_decode_complete():
+                        trames_trouvees += 1
+                        trames_total_cycle += 1
+
+                        # Forcer sync du fichier trame avant de le traiter
+                        os.fsync(stdout_fd)
+
+                        # Restaurer temporairement stdout pour afficher les messages
+                        os.dup2(stdout_backup_fd, stdout_fd)
+                        sys.stdout = stdout_original
+
+                        # Récupérer timestamp pour l'email
+                        utc_time = datetime.now(timezone.utc).strftime('%d %m %Y   %Hh%Mm%Ss')
+
+                        print(f"[DECODE] Trame #{trames_total_cycle} (capture #{capture_count}) détectée à {utc_time}")
+
+                        # Vérifier si fréquence autorisée pour email
+                        freq_mhz_actuelle = freq_trouvee / 1e6
+
+                        # Afficher le décodage dans un bloc séparé
+                        if os.path.exists(trame_file) and os.path.getsize(trame_file) > 0:
+                            print("\n" + "="*80)
+                            with open(trame_file, 'r') as f:
+                                print(f.read())
+                            print("="*80 + "\n")
+
+                        if freq_balise_autorisee(freq_mhz_actuelle):
+                            # Envoyer email immédiatement (comme scan406.pl)
+                            if mail_config:
+                                send_email_simple(trame_file, utc_time, freq_mhz_actuelle, mail_config)
+                            else:
+                                print("[EMAIL] Configuration manquante, email non envoyé")
+
+                        # Réinitialiser le flag pour écouter la prochaine trame
+                        tb.decode_monitor.reset()
+
+                        # Ré-ouvrir le fichier trame en mode TRUNC pour écraser le contenu (nouvelle trame)
+                        trame_fd = os.open(trame_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
+                        os.dup2(trame_fd, stdout_fd)
+                        os.close(trame_fd)
+
+                        # Écrire la fréquence dans le nouveau fichier (pour le C++)
+                        print(f"Frequence: {freq_trouvee/1e6:.6f} MHz")
+                        sys.stdout.flush()
+
+                        # Restaurer sys.stdout pour que les messages Python aillent au terminal
+                        sys.stdout = stdout_original
+
+                        print(f"[DEMOD] En attente de nouvelles trames... ({int(timeout_s - (time.time() - start_time))}s restantes)")
+
+                # Après 56s, arrêter le flowgraph
+                # Restaurer stdout si nécessaire
+                try:
                     os.dup2(stdout_backup_fd, stdout_fd)
-                    sys.stdout = stdout_original
-
-                    # Récupérer timestamp pour l'email
-                    utc_time = datetime.now(timezone.utc).strftime('%d %m %Y   %Hh%Mm%Ss')
-
-                    print(f"[DECODE] Trame #{trames_trouvees} détectée à {utc_time}")
-
-                    # Vérifier si fréquence autorisée pour email
-                    freq_mhz_actuelle = freq_trouvee / 1e6
-
-                    # Afficher le décodage dans un bloc séparé
-                    if os.path.exists(trame_file) and os.path.getsize(trame_file) > 0:
-                        print("\n" + "="*80)
-                        with open(trame_file, 'r') as f:
-                            print(f.read())
-                        print("="*80 + "\n")
-
-                    if freq_balise_autorisee(freq_mhz_actuelle):
-                        # Envoyer email immédiatement (comme scan406.pl)
-                        if mail_config:
-                            send_email_simple(trame_file, utc_time, freq_mhz_actuelle, mail_config)
-                        else:
-                            print("[EMAIL] Configuration manquante, email non envoyé")
-
-                    # Réinitialiser le flag pour écouter la prochaine trame
-                    tb.decode_monitor.reset()
-
-                    # Ré-ouvrir le fichier trame en mode TRUNC pour écraser le contenu (nouvelle trame)
-                    trame_fd = os.open(trame_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
-                    os.dup2(trame_fd, stdout_fd)
-                    os.close(trame_fd)
-
-                    # Écrire la fréquence dans le nouveau fichier (pour le C++)
-                    print(f"Frequence: {freq_trouvee/1e6:.6f} MHz")
-                    sys.stdout.flush()
-
-                    # Restaurer sys.stdout pour que les messages Python aillent au terminal
-                    sys.stdout = stdout_original
-
-                    print(f"[DEMOD] En attente de nouvelles trames... ({int(timeout_s - (time.time() - start_time))}s restantes)")
-
-            # Après 56s, arrêter le flowgraph
-            # Restaurer stdout si nécessaire
-            try:
-                os.dup2(stdout_backup_fd, stdout_fd)
-                os.close(stdout_backup_fd)
-            except:
-                pass
-            sys.stdout = stdout_original
-
-            tb.stop()
-            tb.wait()
-
-            # Récupérer les statistiques finales
-            stats = tb.get_statistics()
-
-            print(f"\n[CYCLE TERMINÉ] Durée: {timeout_s}s")
-            print(f"[STATS] Bursts détectés: {stats['bursts_detected']}")
-            print(f"[STATS] Bursts 1G routés: {stats['bursts_1g']}")
-            print(f"[STATS] Trames démodulées: {stats['frames_decoded']}")
-            print(f"[STATS] Trames envoyées par email: {trames_trouvees}")
-
-            # Décider si on continue sur cette fréquence ou on rescanne
-            if trames_trouvees == 0:
-                print("[DEMOD] Aucune trame détectée, retour au scan...")
-                time.sleep(3)
-            else:
-                print(f"[DEMOD] {trames_trouvees} trame(s) détectée(s), nouveau cycle sur cette fréquence...")
-
-        except KeyboardInterrupt:
-            # Restaurer stdout
-            try:
-                os.dup2(stdout_backup_fd, stdout_fd)
-                os.close(stdout_backup_fd)
-            except:
-                pass
-            sys.stdout = stdout_original
-            print("\n[STOP] Interruption utilisateur")
-            tb.stop()
-            tb.wait()
-            raise
-
-        except Exception as e:
-            # Restaurer stdout
-            try:
-                os.dup2(stdout_backup_fd, stdout_fd)
-                os.close(stdout_backup_fd)
-            except:
-                pass
-            sys.stdout = stdout_original
-            print(f"[ERREUR] {e}")
-            import traceback
-            traceback.print_exc()
-            tb.stop()
-            tb.wait()
-            time.sleep(2)
-
-        finally:
-            # Nettoyer le flowgraph (RTL-SDR fermé après 56s)
-            if 'tb' in locals():
-                try:
-                    del tb
-                    print("[FLOWGRAPH] Flowgraph détruit, RTL-SDR fermé")
+                    os.close(stdout_backup_fd)
                 except:
                     pass
+                sys.stdout = stdout_original
 
-            # Nettoyer fichier bits temporaire
-            if bits_file and os.path.exists(bits_file):
+                tb.stop()
+                tb.wait()
+
+                # Récupérer les statistiques finales
+                stats = tb.get_statistics()
+
+                print(f"\n[CAPTURE #{capture_count} TERMINÉE] Durée: {timeout_s}s")
+                print(f"[STATS] Bursts détectés: {stats['bursts_detected']}")
+                print(f"[STATS] Bursts 1G routés: {stats['bursts_1g']}")
+                print(f"[STATS] Trames démodulées: {stats['frames_decoded']}")
+                print(f"[STATS] Trames envoyées par email (cette capture): {trames_trouvees}")
+
+                # Décider si on continue sur cette fréquence ou on rescanne (comme scan406.pl)
+                if trames_trouvees == 0:
+                    print("[DEMOD] Aucune trame dans cette capture, fin du cycle sur cette fréquence")
+                    print(f"[DEMOD] Total du cycle: {trames_total_cycle} trame(s), {capture_count} capture(s)")
+                    time.sleep(3)
+                    break  # Sortir de la boucle continue, retour au scan
+                else:
+                    print(f"[DEMOD] {trames_trouvees} trame(s) détectée(s), nouvelle capture sur {freq_trouvee/1e6:.6f} MHz...")
+                    # Continue la boucle while True pour recapturer immédiatement
+
+            except KeyboardInterrupt:
+                # Restaurer stdout
                 try:
-                    os.unlink(bits_file)
+                    os.dup2(stdout_backup_fd, stdout_fd)
+                    os.close(stdout_backup_fd)
                 except:
                     pass
+                sys.stdout = stdout_original
+                print("\n[STOP] Interruption utilisateur")
+                tb.stop()
+                tb.wait()
+                raise
+
+            except Exception as e:
+                # Restaurer stdout
+                try:
+                    os.dup2(stdout_backup_fd, stdout_fd)
+                    os.close(stdout_backup_fd)
+                except:
+                    pass
+                sys.stdout = stdout_original
+                print(f"[ERREUR] {e}")
+                import traceback
+                traceback.print_exc()
+                tb.stop()
+                tb.wait()
+                time.sleep(2)
+                break  # Sortir de la boucle continue en cas d'erreur
+
+            finally:
+                # Nettoyer le flowgraph (RTL-SDR fermé après 56s)
+                if 'tb' in locals():
+                    try:
+                        del tb
+                        print("[FLOWGRAPH] Flowgraph détruit, RTL-SDR fermé")
+                    except:
+                        pass
+
+                # Nettoyer fichier bits temporaire
+                if bits_file and os.path.exists(bits_file):
+                    try:
+                        os.unlink(bits_file)
+                    except:
+                        pass
 
     # Nettoyage final
     if os.path.exists(csv_file):
