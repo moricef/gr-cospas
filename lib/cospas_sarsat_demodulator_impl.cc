@@ -610,13 +610,14 @@ int cospas_sarsat_demodulator_impl::process_accumulated_buffer(uint8_t* out, int
                     //               << ", d_mu=" << d_mu << std::endl;
                     // }
 
-                     if (d_debug_mode) {
-                         int message_bit_index = d_total_bit_count - BIT_SYNC_BITS - FRAME_SYNC_BITS;
-                         std::cout << "[DEBUG] Message Bit #" << message_bit_index
-                                   <<"/" << MESSAGE_BITS
-                                   << " (global: " << d_total_bit_count << "/" << TOTAL_BITS << ")"
-                                   << "=" << bit << std::endl;
-                    }
+                    // Debug message bits (désactivé - trop verbeux)
+                    // if (d_debug_mode) {
+                    //     int message_bit_index = d_total_bit_count - BIT_SYNC_BITS - FRAME_SYNC_BITS;
+                    //     std::cout << "[DEBUG] Message Bit #" << message_bit_index
+                    //               <<"/" << MESSAGE_BITS
+                    //               << " (global: " << d_total_bit_count << "/" << TOTAL_BITS << ")"
+                    //               << "=" << bit << std::endl;
+                    // }
 
                     if (bit == '0' || bit == '1') {
                         uint8_t bit_value = (bit == '1') ? 1 : 0;
