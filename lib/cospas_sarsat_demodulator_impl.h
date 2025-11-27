@@ -35,9 +35,9 @@ private:
     // Seuils
     static constexpr float MOD_PHASE = 1.1f;
     static constexpr float PHASE_THRESHOLD = 1.0f;
-    static constexpr float CARRIER_THRESHOLD = 0.2f;
-    static constexpr float JUMP_THRESHOLD = 0.5f;
-    static constexpr int MAX_CONSECUTIVE_ERRORS = 5;
+    static constexpr float CARRIER_THRESHOLD = 0.3f;
+    static constexpr float JUMP_THRESHOLD = 0.7f;
+    static constexpr int MAX_CONSECUTIVE_ERRORS = 8;
     
     void handle_burst_message(pmt::pmt_t msg);  // Handler pour les messages
     void process_burst(const gr_complex* samples, int num_samples);  // Traitement d'un burst

@@ -395,40 +395,49 @@ static void decode_user_location(const char *s, BeaconInfo1G *info, int frame_le
     if (frame_length == LONG_FRAME_BITS) {
         // For User-Location Protocol with long message, decode position from PDF-2
         // According to C/S T.001 section A3.2
-        
+
+        // Get user protocol code to check if it's orbitography
+        int user_protocol_code = get_bits(s, 36, 3);
+
+        // If it's orbitography (code 000), don't decode position
+        // has_position was already set to 0 by decode_orbitography_data()
+        if (user_protocol_code == 0b000) {
+            return;
+        }
+
         // Bit 107: Position source (0=external, 1=internal navigation device)
         info->position_source = (s[106] == '1') ? 1 : 0;
-        
+
         // Bit 108: N/S flag (N=0, S=1)
         int lat_sign = (s[107] == '0') ? 1 : -1;  // Bit 108 (index 107)
-        
+
         // Bits 109-115: Latitude degrees (0-90) - 7 bits
         int lat_deg = get_bits(s, 108, 7);  // Bits 109-115 (indices 108-114)
-        
+
         // Bits 116-119: Latitude minutes/4 (0-14, representing 0-56 minutes in 4-minute steps) - 4 bits
         int lat_min_div4 = get_bits(s, 115, 4); // Bits 116-119 (indices 115-118)
-        
+
         // Bit 120: E/W flag (E=0, W=1)
         int lon_sign = (s[119] == '0') ? 1 : -1;  // Bit 120 (index 119)
-        
+
         // Bits 121-128: Longitude degrees (0-180) - 8 bits
         int lon_deg = get_bits(s, 120, 8);  // Bits 121-128 (indices 120-127)
-        
+
         // Bits 129-132: Longitude minutes/4 (0-14, representing 0-56 minutes in 4-minute steps) - 4 bits
         int lon_min_div4 = get_bits(s, 128, 4); // Bits 129-132 (indices 128-131)
-        
+
         // Calculate actual position
         // The minutes value is in 4-minute increments, so multiply by 4
         double lat_minutes = lat_min_div4 * 4.0;
         double lon_minutes = lon_min_div4 * 4.0;
-        
+
         info->lat = lat_sign * (lat_deg + lat_minutes / 60.0);
         info->lon = lon_sign * (lon_deg + lon_minutes / 60.0);
-        
+
         // Store base position (same as final for User-Location)
         info->base_lat = info->lat;
         info->base_lon = info->lon;
-        
+
         // Mark that we have position data
         info->has_position = 1;
     } else {
@@ -853,16 +862,39 @@ static void decode_1g_frame(const char *frame, int frame_length, BeaconInfo1G *i
     // CRC verification
     int crc1_failed = test_crc1(frame);
     int crc2_failed = 0;
-    
+    int is_orbitography = 0;
+
     if (frame_length == LONG_FRAME_BITS) {
-        crc2_failed = test_crc2(frame);
+        // Check if it's orbitography (protocol 0b000 for user location)
+        // Orbitography beacons don't have position data, so CRC2 doesn't apply
+        int user_protocol_code = get_bits(frame, 36, 3);
+        is_orbitography = (user_protocol_code == 0b000);
+
+        if (!is_orbitography) {
+            // Only test CRC2 if NOT orbitography
+            crc2_failed = test_crc2(frame);
+        }
     }
 
+    // Display CRC status
     if (crc1_failed || crc2_failed) {
         info->crc_error = 1;
-        printf("CRC ERROR: CRC1=%s CRC2=%s\n", 
-               crc1_failed ? "FAIL" : "OK", 
-               crc2_failed ? "FAIL" : "OK");
+        if (is_orbitography) {
+            // Orbitography: only show CRC1 (CRC2 N/A)
+            printf("CRC: CRC1=%s\n", crc1_failed ? "FAIL" : "OK");
+        } else {
+            // Normal beacon: show both CRC1 and CRC2
+            printf("CRC ERROR: CRC1=%s CRC2=%s\n",
+                   crc1_failed ? "FAIL" : "OK",
+                   crc2_failed ? "FAIL" : "OK");
+        }
+    } else {
+        // All CRCs OK
+        if (is_orbitography) {
+            printf("CRC: CRC1=OK\n");
+        } else {
+            printf("CRC: CRC1=OK CRC2=OK\n");
+        }
     }
     
     // Decode country code (bits 27-36, positions 26-35 in 0-indexed)
@@ -1136,7 +1168,7 @@ void decode_1g(const uint8_t *bits, int length) {
    // Display coordinates
   // Display base position (PDF-1) if we have position data
   if (info.has_position) {
-    printf("\nPosition (PDF-1): %.5f, %.5f", 
+    printf("\nPosition (PDF-1): %.5f %c, %.5f %c",
            fabs(info.base_lat), (info.base_lat >= 0) ? 'N' : 'S',
            fabs(info.base_lon), (info.base_lon >= 0) ? 'E' : 'W');
     
