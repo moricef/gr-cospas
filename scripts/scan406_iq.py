@@ -3,7 +3,11 @@
 """
 scan406_iq.py - Scanner COSPAS-SARSAT avec démodulation I/Q
 Reproduit le comportement de scan406.pl mais avec traitement I/Q direct
-Intègre les optimisations validées: lowpass 20kHz, normalisation 0.15, seuil 0.05
+Intègre les optimisations validées:
+- Autocorrélation burst detection (dec406_V7)
+- Seuils adaptatifs (variance phase 0.15-0.7 rad selon SNR)
+- Lowpass 20kHz, normalisation 0.15, seuil 0.05
+- Validation bit sync stricte (>=13/15 bits)
 
 Usage: python3 scan406_iq.py <f1_MHz> <f2_MHz> [ppm] [snr_threshold]
 Exemple: python3 scan406_iq.py 403.000 403.100 0 7
