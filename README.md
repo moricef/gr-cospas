@@ -119,15 +119,19 @@ Tested with RTL-SDR on real CNES test beacons:
 
 ### Operation Cycle
 
-The scanner runs in continuous cycles:
+The scanner runs in continuous cycles (matching scan406.pl behavior):
 
 1. **Frequency Scan** (55s): `rtl_power` scans the range and finds strongest signal
-2. **Signal Capture** (56s): Flowgraph opens and captures continuously
-   - Multiple frames can be detected during this period
+2. **Signal Capture Loop** (56s per capture):
+   - Flowgraph opens and captures for 56s
+   - Multiple frames can be detected during each period
    - Email sent immediately after each frame detection
-   - RTL-SDR stays open for stability
-3. **USB Reset**: Device reset between cycles to prevent lock-ups
+   - **If frames detected**: Immediately start new 56s capture on same frequency
+   - **If no frames**: Exit loop and rescan frequency range
+3. **USB Reset**: Device reset between frequency cycles to prevent lock-ups
 4. **Loop**: Returns to step 1
+
+**Example**: If beacon transmits every 50s, scanner will capture 10-20 frames per cycle before rescanning.
 
 ## Configuration
 
