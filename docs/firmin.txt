@@ -1,0 +1,34 @@
+ j'ai testé test_rtlsdr.py sur la machine distante avec les balises d'étalonnage du CNES captées sur 406.022 et 406.034 et toutes les 50s, mais comme l'alimentation de l'usb est faiblarde, je perd le dongle sdr sans pouvoir faire de tests prolongés. comme elles sont quand à 80km
+ du récepteur elles sont assez faibles. dfonc je n'azi absolument rien comme résultat 
+
+● Le problème est clairement hardware, pas logiciel. Quelques suggestions pour stabiliser le RTL-SDR:
+
+  Solutions immédiates:
+
+  1. Hub USB alimenté
+    - Le RTL-SDR consomme ~300mA, surtout avec gain élevé
+    - Un hub USB avec alimentation externe résoudrait le problème
+  2. Réduire le gain dans test_rtlsdr.py et scan406_iq.py
+    - Actuellement: set_gain(40) + set_if_gain(20) + set_bb_gain(20) = consommation max
+    - Pour signaux faibles à 80km, essayer:
+  self.rtl_source.set_gain_mode(True, 0)  # AGC automatique
+  # OU gain manuel plus bas:
+  self.rtl_source.set_gain(30)
+  self.rtl_source.set_if_gain(15)
+  self.rtl_source.set_bb_gain(15)
+  3. Vérifier l'alimentation
+  dmesg | grep -i usb | tail -20  # Voir si erreurs "device not accepting address"
+  lsusb -v | grep -A5 "RTL"       # Vérifier si le dongle est détecté
+  4. LNA externe (si possible)
+    - Amplificateur faible bruit entre l'antenne et le RTL-SDR
+    - Compense les signaux faibles à 80km
+
+  Pour tester sans perte USB:
+
+  Vous pouvez capturer avec rtl_fm en fichier IQ d'abord, puis rejouer:
+  # Capturer 60s en fichier
+  timeout 60s rtl_fm -f 406.022M -s 40000 -M raw -p 0 - > capture.iq
+
+  # Rejouer avec test_rtlsdr.py modifié pour lire fichier au lieu de RTL-SDR
+
+  Est-ce que vous voulez que je modifie le code pour réduire les gains et économiser l'énergie USB?

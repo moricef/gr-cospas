@@ -14,6 +14,8 @@ Exemple:
 import sys
 import time
 import re
+import subprocess
+import threading
 from datetime import datetime, timezone
 from gnuradio import gr, blocks, filter
 from gnuradio import cospas
@@ -33,6 +35,9 @@ class test_rtlsdr_demod(gr.top_block):
         self.frames_ok = 0
         self.frames_error = 0
         self.demodulated_frames = []
+        self.crc_ok_count = 0
+        self.crc_error_count = 0
+        self.output_buffer = []
         # RTL-SDR minimum sample rate ~225 kHz
         # Utiliser 240 kHz avec decimation par 6 pour obtenir 40 kHz
         rtl_sample_rate = 240000

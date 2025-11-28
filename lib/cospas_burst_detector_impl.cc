@@ -111,7 +111,7 @@ void cospas_burst_detector_impl::process_sample(const gr_complex& sample)
             float max_corr = *std::max_element(d_amplitude_buffer.begin(), d_amplitude_buffer.end());
             d_adaptive_threshold = d_threshold_factor * max_corr;
 
-            const float MIN_THRESHOLD = 0.0001f;
+            const float MIN_THRESHOLD = 1e-8f;  // Réduit pour signaux faibles normalisés
             if (d_adaptive_threshold < MIN_THRESHOLD) {
                 d_adaptive_threshold = MIN_THRESHOLD;
             }
@@ -149,11 +149,19 @@ void cospas_burst_detector_impl::process_sample(const gr_complex& sample)
 
             if (correlation > d_adaptive_threshold) {
                 d_silence_count = 0;
+                if (d_debug_mode && d_burst_samples.size() % 1000 == 0) {
+                    std::cout << "[BURST_DETECTOR] IN_BURST: samples=" << d_burst_samples.size()
+                              << ", corr=" << correlation << ", threshold=" << d_adaptive_threshold << std::endl;
+                }
             } else {
                 d_silence_count++;
+                if (d_debug_mode && d_silence_count == 1) {
+                    std::cout << "[BURST_DETECTOR] Silence started, corr=" << correlation
+                              << " < threshold=" << d_adaptive_threshold << std::endl;
+                }
 
-                // Seuil de silence : 50ms (2000 samples @ 40kHz)
-                int silence_threshold = static_cast<int>(d_sample_rate * 0.05f);
+                // Seuil de silence : 10ms (400 samples @ 40kHz)
+                int silence_threshold = static_cast<int>(d_sample_rate * 0.01f);
 
                 if (d_silence_count >= silence_threshold) {
                     // Fin du burst detectee

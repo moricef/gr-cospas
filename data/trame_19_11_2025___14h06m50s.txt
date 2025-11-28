@@ -1,0 +1,8 @@
+=== ALERTE BALISE 406 MHz ===
+
+Date UTC: 19 11 2025   14h06m50s
+Fréquence: 403.039062 MHz
+Trames décodées: 8
+Bursts détectés: 9
+
+Détails complets dans les logs stdout.

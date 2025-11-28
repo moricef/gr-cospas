@@ -9,11 +9,15 @@ class test_file_message_mode(gr.top_block):
     def __init__(self, input_file, sample_rate=40000):
         gr.top_block.__init__(self)
 
-        # Source fichier IQ
         self.file_source = blocks.file_source(gr.sizeof_gr_complex, input_file, False)
 
-        # Burst Detector
-        self.burst_detector = cospas.cospas_burst_detector(sample_rate, False)
+        self.burst_detector = cospas.cospas_burst_detector(
+            sample_rate=sample_rate,
+            buffer_duration_ms=2000,
+            threshold=0.5,
+            min_burst_duration_ms=200,
+            debug_mode=True
+        )
 
         # Burst Router
         self.burst_router = cospas.burst_router(sample_rate, False)
@@ -37,7 +41,7 @@ class test_file_message_mode(gr.top_block):
 
         print(f"Fichier: {input_file}")
         print(f"Sample rate: {sample_rate} Hz")
-        print("Chaîne: File → Detector → Router → Demod (message mode)")
+        print("Chaîne: File → Detector (autocorrélation) → Router → Demod")
         print("")
 
 def main():
