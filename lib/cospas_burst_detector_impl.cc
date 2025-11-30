@@ -183,16 +183,19 @@ void cospas_burst_detector_impl::process_sample(const gr_complex& sample)
 
         // === TECHNIQUE 1: Double seuil (hystérésis) ===
         // Seuil bas adaptatif selon SNR du burst
-        // SNR typique : 50-500 pour signaux COSPAS
+        // SNR typique : Local 100-400, CNES Firmin <30
         float threshold_low;
-        if (d_burst_mean_snr > 200.0f) {
-            // Signal fort → seuil bas à 50% du seuil haut
+        if (d_burst_mean_snr > 300.0f) {
+            // Signal très fort → seuil bas à 50% du seuil haut
             threshold_low = d_adaptive_threshold * 0.5f;
-        } else if (d_burst_mean_snr > 50.0f) {
+        } else if (d_burst_mean_snr > 100.0f) {
+            // Signal fort (local) → seuil bas à 40%
+            threshold_low = d_adaptive_threshold * 0.4f;
+        } else if (d_burst_mean_snr > 30.0f) {
             // Signal moyen → seuil bas à 30%
             threshold_low = d_adaptive_threshold * 0.3f;
         } else {
-            // Signal faible → seuil bas à 20% (très tolérant)
+            // Signal faible (CNES distant) → seuil bas à 20% (très tolérant)
             threshold_low = d_adaptive_threshold * 0.2f;
         }
 
@@ -236,14 +239,17 @@ void cospas_burst_detector_impl::process_sample(const gr_complex& sample)
 
             // Seuil long adaptatif pour abandonner le burst
             int silence_threshold;
-            if (d_burst_mean_snr > 200.0f) {
-                // Signal fort → seuil court (100ms)
-                silence_threshold = static_cast<int>(d_sample_rate * 0.10f);
-            } else if (d_burst_mean_snr > 50.0f) {
-                // Signal moyen → seuil standard (120ms)
+            if (d_burst_mean_snr > 300.0f) {
+                // Signal très fort → seuil court (110ms)
+                silence_threshold = static_cast<int>(d_sample_rate * 0.11f);
+            } else if (d_burst_mean_snr > 100.0f) {
+                // Signal fort (local) → seuil standard (120ms)
                 silence_threshold = static_cast<int>(d_sample_rate * 0.12f);
+            } else if (d_burst_mean_snr > 30.0f) {
+                // Signal moyen → seuil tolérant (150ms)
+                silence_threshold = static_cast<int>(d_sample_rate * 0.15f);
             } else {
-                // Signal faible → seuil long (200ms) pour tolérer creux
+                // Signal faible (CNES distant) → seuil très long (200ms)
                 silence_threshold = static_cast<int>(d_sample_rate * 0.20f);
             }
 
@@ -335,9 +341,11 @@ void cospas_burst_detector_impl::process_sample(const gr_complex& sample)
 
         // Seuil bas adaptatif pour sortir du creux
         float gap_exit_threshold;
-        if (d_burst_mean_snr > 200.0f) {
+        if (d_burst_mean_snr > 300.0f) {
             gap_exit_threshold = d_adaptive_threshold * 0.5f;
-        } else if (d_burst_mean_snr > 50.0f) {
+        } else if (d_burst_mean_snr > 100.0f) {
+            gap_exit_threshold = d_adaptive_threshold * 0.4f;
+        } else if (d_burst_mean_snr > 30.0f) {
             gap_exit_threshold = d_adaptive_threshold * 0.3f;
         } else {
             gap_exit_threshold = d_adaptive_threshold * 0.2f;
@@ -357,11 +365,13 @@ void cospas_burst_detector_impl::process_sample(const gr_complex& sample)
                 std::cout << "[BURST_DETECTOR] Gap filled, back to IN_BURST" << std::endl;
             }
         } else {
-            // Seuil long adaptatif pour abandonner le creux (200ms max)
+            // Seuil long adaptatif pour abandonner le creux
             int gap_abandon_threshold;
-            if (d_burst_mean_snr > 200.0f) {
-                gap_abandon_threshold = static_cast<int>(d_sample_rate * 0.10f);
-            } else if (d_burst_mean_snr > 50.0f) {
+            if (d_burst_mean_snr > 300.0f) {
+                gap_abandon_threshold = static_cast<int>(d_sample_rate * 0.11f);
+            } else if (d_burst_mean_snr > 100.0f) {
+                gap_abandon_threshold = static_cast<int>(d_sample_rate * 0.12f);
+            } else if (d_burst_mean_snr > 30.0f) {
                 gap_abandon_threshold = static_cast<int>(d_sample_rate * 0.15f);
             } else {
                 gap_abandon_threshold = static_cast<int>(d_sample_rate * 0.20f);
