@@ -8,20 +8,19 @@
 #include "cospas_burst_detector_impl.h"
 #include <gnuradio/io_signature.h>
 #include <pmt/pmt.h>
-#include <iostream>
-#include <cmath>
 #include <algorithm>
+#include <cmath>
 #include <cstring>
+#include <iostream>
 
 namespace gr {
 namespace cospas {
 
-cospas_burst_detector::sptr
-cospas_burst_detector::make(float sample_rate,
-                            int buffer_duration_ms,
-                            float threshold,
-                            int min_burst_duration_ms,
-                            bool debug_mode)
+cospas_burst_detector::sptr cospas_burst_detector::make(float sample_rate,
+                                                        int buffer_duration_ms,
+                                                        float threshold,
+                                                        int min_burst_duration_ms,
+                                                        bool debug_mode)
 {
     return gnuradio::make_block_sptr<cospas_burst_detector_impl>(
         sample_rate, buffer_duration_ms, threshold, min_burst_duration_ms, debug_mode);
@@ -42,18 +41,22 @@ cospas_burst_detector_impl::cospas_burst_detector_impl(float sample_rate,
       d_debug_mode(debug_mode),
       d_adaptive_threshold(0.0f),
       d_threshold_initialized(false),
+      d_calibration_p95_amplitude(0.0f),
       d_samples_per_bit(static_cast<int>(sample_rate / 400.0f)),
       d_buffer_index(0),
       d_state(IDLE),
       d_silence_count(0),
+      d_burst_mean_snr(0.0f),
       d_output_offset(0),
       d_bursts_detected(0)
 {
     d_buffer_size = static_cast<int>((sample_rate * buffer_duration_ms) / 1000.0f);
-    d_min_burst_samples = static_cast<int>((sample_rate * min_burst_duration_ms) / 1000.0f);
+    d_min_burst_samples =
+        static_cast<int>((sample_rate * min_burst_duration_ms) / 1000.0f);
 
     int calibration_samples = static_cast<int>(sample_rate * 0.5f);
     d_amplitude_buffer.reserve(calibration_samples);
+    d_amplitude_raw_buffer.reserve(calibration_samples);
 
     d_correlation_buffer.resize(2 * d_samples_per_bit, 0.0f);
 
@@ -73,9 +76,7 @@ cospas_burst_detector_impl::cospas_burst_detector_impl(float sample_rate,
     }
 }
 
-cospas_burst_detector_impl::~cospas_burst_detector_impl()
-{
-}
+cospas_burst_detector_impl::~cospas_burst_detector_impl() {}
 
 float cospas_burst_detector_impl::compute_autocorrelation()
 {
@@ -89,7 +90,8 @@ float cospas_burst_detector_impl::compute_autocorrelation()
     for (int i = 0; i < d_samples_per_bit; i++) {
         int idx1 = (d_buffer_index + i) % (2 * d_samples_per_bit);
         int idx2 = (d_buffer_index + i + d_samples_per_bit) % (2 * d_samples_per_bit);
-        correlation += (d_correlation_buffer[idx1] - mean) * (d_correlation_buffer[idx2] - mean);
+        correlation +=
+            (d_correlation_buffer[idx1] - mean) * (d_correlation_buffer[idx2] - mean);
     }
 
     return std::abs(correlation);
@@ -106,9 +108,20 @@ void cospas_burst_detector_impl::process_sample(const gr_complex& sample)
 
     if (!d_threshold_initialized) {
         d_amplitude_buffer.push_back(correlation);
+        d_amplitude_raw_buffer.push_back(amplitude);
 
         if (d_amplitude_buffer.size() >= d_amplitude_buffer.capacity()) {
-            float max_corr = *std::max_element(d_amplitude_buffer.begin(), d_amplitude_buffer.end());
+            float max_corr =
+                *std::max_element(d_amplitude_buffer.begin(), d_amplitude_buffer.end());
+
+            // Calculer p95 d'amplitude pour squelch adaptatif
+            std::vector<float> sorted_amplitudes = d_amplitude_raw_buffer;
+            std::sort(sorted_amplitudes.begin(), sorted_amplitudes.end());
+            size_t p95_idx = static_cast<size_t>(sorted_amplitudes.size() * 0.95f);
+            d_calibration_p95_amplitude = (p95_idx < sorted_amplitudes.size())
+                                              ? sorted_amplitudes[p95_idx]
+                                              : sorted_amplitudes.back();
+
             d_adaptive_threshold = d_threshold_factor * max_corr;
 
             const float MIN_THRESHOLD = 0.0001f;
@@ -121,87 +134,308 @@ void cospas_burst_detector_impl::process_sample(const gr_complex& sample)
             if (d_debug_mode) {
                 std::cout << "[BURST_DETECTOR] Calibration:" << std::endl;
                 std::cout << "  Max correlation: " << max_corr << std::endl;
+                std::cout << "  P95 amplitude: " << d_calibration_p95_amplitude
+                          << std::endl;
                 std::cout << "  Threshold: " << d_adaptive_threshold << std::endl;
             }
 
             d_amplitude_buffer.clear();
             d_amplitude_buffer.shrink_to_fit();
+            d_amplitude_raw_buffer.clear();
+            d_amplitude_raw_buffer.shrink_to_fit();
         }
         return;
     }
 
     switch (d_state) {
-        case IDLE:
-            if (correlation > d_adaptive_threshold) {
-                d_state = IN_BURST;
-                d_burst_samples.clear();
-                d_burst_samples.push_back(sample);
-                d_silence_count = 0;
+    case IDLE:
+        if (correlation > d_adaptive_threshold) {
+            d_state = IN_BURST;
+            d_burst_samples.clear();
+            d_burst_samples.push_back(sample);
+            d_silence_count = 0;
 
-                if (d_debug_mode) {
-                    std::cout << "[BURST_DETECTOR] Burst started, corr=" << correlation << std::endl;
-                }
+            if (d_debug_mode) {
+                std::cout << "[BURST_DETECTOR] Burst started, corr=" << correlation
+                          << std::endl;
             }
-            break;
+        }
+        break;
 
-        case IN_BURST:
+    case IN_BURST: {
+        // === TECHNIQUE 2: Tracking SNR adaptatif ===
+        // Calculer SNR instantané (basé sur corrélation, pas amplitude)
+        float instant_snr = correlation / (d_adaptive_threshold + 1e-9f);
+        d_snr_history.push_back(instant_snr);
+
+        // Garder seulement 100ms d'historique (4000 samples @ 40kHz)
+        const size_t SNR_HISTORY_SIZE = 4000;
+        if (d_snr_history.size() > SNR_HISTORY_SIZE) {
+            d_snr_history.erase(d_snr_history.begin());
+        }
+
+        // Calculer SNR moyen du burst
+        float sum_snr = 0.0f;
+        for (float snr : d_snr_history) {
+            sum_snr += snr;
+        }
+        d_burst_mean_snr = sum_snr / d_snr_history.size();
+
+        // === TECHNIQUE 1: Double seuil (hystérésis) ===
+        // Seuil bas adaptatif selon SNR du burst
+        float threshold_low;
+        if (d_burst_mean_snr > 3.0f) {
+            // Signal fort → seuil bas à 50% du seuil haut
+            threshold_low = d_adaptive_threshold * 0.5f;
+        } else if (d_burst_mean_snr > 1.5f) {
+            // Signal moyen → seuil bas à 30%
+            threshold_low = d_adaptive_threshold * 0.3f;
+        } else {
+            // Signal faible → seuil bas à 20% (très tolérant)
+            threshold_low = d_adaptive_threshold * 0.2f;
+        }
+
+        // Utiliser le seuil BAS pour rester dans le burst
+        if (correlation > threshold_low) {
+            // Signal présent (même faible) → continuer le burst
             d_burst_samples.push_back(sample);
 
-            if (correlation > d_adaptive_threshold) {
-                d_silence_count = 0;
-            } else {
-                d_silence_count++;
-
-                // Seuil de silence : 50ms (2000 samples @ 40kHz)
-                int silence_threshold = static_cast<int>(d_sample_rate * 0.05f);
-
-                if (d_silence_count >= silence_threshold) {
-                    // Fin du burst detectee
-                    int burst_duration = static_cast<int>(d_burst_samples.size());
-
-                    if (d_debug_mode) {
-                        std::cout << "[BURST_DETECTOR] Fin detectee: amplitude=" << amplitude
-                                  << ", threshold=" << d_adaptive_threshold
-                                  << ", silence_count=" << d_silence_count
-                                  << ", burst_duration=" << burst_duration << std::endl;
-                    }
-
-                    if (burst_duration >= d_min_burst_samples) {
-                        // Burst valide - NE PAS retirer le silence, garder 520ms complets
-                        // On garde tous les echantillons pour avoir le burst complet de 20800 samples
-                        // Le demodulateur gerera le padding
-
-                        d_state = BURST_COMPLETE;
-                        d_bursts_detected++;
-
-                        if (d_debug_mode) {
-                            std::cout << "[BURST_DETECTOR] Burst #" << d_bursts_detected
-                                      << " complete: duration=" << d_burst_samples.size() << " samples ("
-                                      << (d_burst_samples.size() * 1000.0f / d_sample_rate) << " ms)"
-                                      << std::endl;
-                        }
-                    } else {
-                        // Burst trop court : ignorer
-                        if (d_debug_mode) {
-                            std::cout << "[BURST_DETECTOR] Burst too short (" << burst_duration
-                                      << " < " << d_min_burst_samples << ") - ignored" << std::endl;
-                        }
-                        reset_burst_state();
-                    }
+            // Si on était dans un creux, le valider et l'ajouter au burst
+            if (!d_gap_buffer.empty()) {
+                d_burst_samples.insert(d_burst_samples.end(),
+                                       d_gap_buffer.begin(),
+                                       d_gap_buffer.end());
+                d_gap_buffer.clear();
+                if (d_debug_mode) {
+                    std::cout << "[BURST_DETECTOR] Gap interpolated ("
+                              << d_gap_buffer.size() << " samples)" << std::endl;
                 }
             }
-            break;
+            d_silence_count = 0;
+        } else {
+            // Signal faible → possible début de creux
+            d_silence_count++;
 
-        case BURST_COMPLETE:
-            // Attendre que le burst soit extrait (ne rien faire)
-            break;
+            // === TECHNIQUE 3: Interpolation des creux ===
+            // Seuil court pour détecter début de creux potentiel (50ms)
+            const int GAP_DETECT_THRESHOLD = static_cast<int>(d_sample_rate * 0.05f);
+
+            if (d_silence_count >= GAP_DETECT_THRESHOLD && d_gap_buffer.empty()) {
+                // Début d'un creux potentiel → passer en mode GAP
+                d_state = IN_GAP;
+                d_gap_buffer.clear();
+                if (d_debug_mode) {
+                    std::cout << "[BURST_DETECTOR] Potential gap detected at silence_count="
+                              << d_silence_count << std::endl;
+                }
+            } else if (d_gap_buffer.empty()) {
+                // Pas encore un creux, continuer à ajouter au burst
+                d_burst_samples.push_back(sample);
+            }
+
+            // Seuil long adaptatif pour abandonner le burst
+            int silence_threshold;
+            if (d_burst_mean_snr > 3.0f) {
+                // Signal fort → seuil court (100ms)
+                silence_threshold = static_cast<int>(d_sample_rate * 0.10f);
+            } else if (d_burst_mean_snr > 1.5f) {
+                // Signal moyen → seuil standard (120ms)
+                silence_threshold = static_cast<int>(d_sample_rate * 0.12f);
+            } else {
+                // Signal faible → seuil long (200ms) pour tolérer creux
+                silence_threshold = static_cast<int>(d_sample_rate * 0.20f);
+            }
+
+            if (d_silence_count >= silence_threshold) {
+                // Fin du burst detectee
+                int burst_duration = static_cast<int>(d_burst_samples.size());
+
+                // Calculer p95 du burst pour squelch
+                std::vector<float> amplitudes;
+                amplitudes.reserve(d_burst_samples.size());
+                for (const auto& s : d_burst_samples) {
+                    amplitudes.push_back(std::abs(s));
+                }
+                std::sort(amplitudes.begin(), amplitudes.end());
+                size_t p95_idx = static_cast<size_t>(amplitudes.size() * 0.95f);
+                float burst_p95 = (p95_idx < amplitudes.size()) ? amplitudes[p95_idx]
+                                                                : amplitudes.back();
+
+                // Squelch adaptatif basé sur p95 d'amplitude de calibration
+                // Signal fort (calib_p95_amp >= 0.15): squelch strict 0.10
+                // Signal faible (calib_p95_amp <= 0.02): squelch relaxé 0.01
+                // Interpolation linéaire entre les deux
+                float squelch_threshold;
+                if (d_calibration_p95_amplitude >= 0.15f) {
+                    squelch_threshold = 0.10f;
+                } else if (d_calibration_p95_amplitude <= 0.02f) {
+                    squelch_threshold = 0.01f;
+                } else {
+                    float ratio = (d_calibration_p95_amplitude - 0.02f) / (0.15f - 0.02f);
+                    squelch_threshold = 0.01f + ratio * (0.10f - 0.01f);
+                }
+
+                if (d_debug_mode) {
+                    std::cout << "[BURST_DETECTOR] Fin detectee: amplitude=" << amplitude
+                              << ", threshold=" << d_adaptive_threshold
+                              << ", silence_count=" << d_silence_count
+                              << ", burst_duration=" << burst_duration
+                              << ", p95=" << burst_p95
+                              << ", squelch=" << squelch_threshold << std::endl;
+                }
+
+                if (burst_p95 < squelch_threshold) {
+                    if (d_debug_mode) {
+                        std::cout << "[BURST_DETECTOR] Burst rejected by squelch (p95="
+                                  << burst_p95 << " < " << squelch_threshold << ")"
+                                  << std::endl;
+                    }
+                    reset_burst_state();
+                } else if (burst_duration >= d_min_burst_samples) {
+                    // Burst valide - NE PAS retirer le silence, garder 520ms complets
+                    // On garde tous les echantillons pour avoir le burst complet de 20800
+                    // samples Le demodulateur gerera le padding
+
+                    d_state = BURST_COMPLETE;
+                    d_bursts_detected++;
+
+                    if (d_debug_mode) {
+                        std::cout << "[BURST_DETECTOR] Burst #" << d_bursts_detected
+                                  << " complete: duration=" << d_burst_samples.size()
+                                  << " samples ("
+                                  << (d_burst_samples.size() * 1000.0f / d_sample_rate)
+                                  << " ms)" << std::endl;
+                    }
+                } else {
+                    // Burst trop court : ignorer
+                    if (d_debug_mode) {
+                        std::cout << "[BURST_DETECTOR] Burst too short ("
+                                  << burst_duration << " < " << d_min_burst_samples
+                                  << ") - ignored" << std::endl;
+                    }
+                    reset_burst_state();
+                }
+            }
+        }
+        break;
+    }
+
+    case BURST_COMPLETE:
+        // Attendre que le burst soit extrait (ne rien faire)
+        break;
+
+    case IN_GAP: {
+        // Stocker échantillons du creux temporairement
+        d_gap_buffer.push_back(sample);
+        d_silence_count++;
+
+        // Calculer SNR du creux
+        float instant_snr = amplitude / (d_adaptive_threshold + 1e-9f);
+
+        // Seuil bas adaptatif pour sortir du creux
+        float gap_exit_threshold;
+        if (d_burst_mean_snr > 3.0f) {
+            gap_exit_threshold = d_adaptive_threshold * 0.5f;
+        } else if (d_burst_mean_snr > 1.5f) {
+            gap_exit_threshold = d_adaptive_threshold * 0.3f;
+        } else {
+            gap_exit_threshold = d_adaptive_threshold * 0.2f;
+        }
+
+        if (correlation > gap_exit_threshold) {
+            // Signal revenu → creux confirmé court, interpoler
+            d_burst_samples.insert(d_burst_samples.end(),
+                                   d_gap_buffer.begin(),
+                                   d_gap_buffer.end());
+            d_burst_samples.push_back(sample);
+            d_gap_buffer.clear();
+            d_silence_count = 0;
+            d_state = IN_BURST;
+
+            if (d_debug_mode) {
+                std::cout << "[BURST_DETECTOR] Gap filled, back to IN_BURST" << std::endl;
+            }
+        } else {
+            // Seuil long adaptatif pour abandonner le creux (200ms max)
+            int gap_abandon_threshold;
+            if (d_burst_mean_snr > 3.0f) {
+                gap_abandon_threshold = static_cast<int>(d_sample_rate * 0.10f);
+            } else if (d_burst_mean_snr > 1.5f) {
+                gap_abandon_threshold = static_cast<int>(d_sample_rate * 0.15f);
+            } else {
+                gap_abandon_threshold = static_cast<int>(d_sample_rate * 0.20f);
+            }
+
+            if (d_silence_count >= gap_abandon_threshold) {
+                // Creux trop long → fin du burst
+                d_gap_buffer.clear();  // Ne pas inclure le creux
+                int burst_duration = static_cast<int>(d_burst_samples.size());
+
+                // Calculer p95 du burst pour squelch
+                std::vector<float> amplitudes;
+                amplitudes.reserve(d_burst_samples.size());
+                for (const auto& s : d_burst_samples) {
+                    amplitudes.push_back(std::abs(s));
+                }
+                std::sort(amplitudes.begin(), amplitudes.end());
+                size_t p95_idx = static_cast<size_t>(amplitudes.size() * 0.95f);
+                float burst_p95 = (p95_idx < amplitudes.size()) ? amplitudes[p95_idx]
+                                                                : amplitudes.back();
+
+                // Squelch adaptatif
+                float squelch_threshold;
+                if (d_calibration_p95_amplitude >= 0.15f) {
+                    squelch_threshold = 0.10f;
+                } else if (d_calibration_p95_amplitude <= 0.02f) {
+                    squelch_threshold = 0.01f;
+                } else {
+                    float ratio = (d_calibration_p95_amplitude - 0.02f) / (0.15f - 0.02f);
+                    squelch_threshold = 0.01f + ratio * (0.10f - 0.01f);
+                }
+
+                if (d_debug_mode) {
+                    std::cout << "[BURST_DETECTOR] Gap too long, burst end: amplitude="
+                              << amplitude << ", silence_count=" << d_silence_count
+                              << ", burst_duration=" << burst_duration
+                              << ", p95=" << burst_p95
+                              << ", squelch=" << squelch_threshold
+                              << ", mean_snr=" << d_burst_mean_snr << std::endl;
+                }
+
+                if (burst_p95 < squelch_threshold) {
+                    if (d_debug_mode) {
+                        std::cout << "[BURST_DETECTOR] Burst rejected by squelch (p95="
+                                  << burst_p95 << " < " << squelch_threshold << ")"
+                                  << std::endl;
+                    }
+                    reset_burst_state();
+                } else if (burst_duration >= d_min_burst_samples) {
+                    d_state = BURST_COMPLETE;
+                    d_bursts_detected++;
+
+                    if (d_debug_mode) {
+                        std::cout << "[BURST_DETECTOR] Burst #" << d_bursts_detected
+                                  << " complete: duration=" << d_burst_samples.size()
+                                  << " samples ("
+                                  << (d_burst_samples.size() * 1000.0f / d_sample_rate)
+                                  << " ms)" << std::endl;
+                    }
+                } else {
+                    if (d_debug_mode) {
+                        std::cout << "[BURST_DETECTOR] Burst too short ("
+                                  << burst_duration << " < " << d_min_burst_samples
+                                  << ") - ignored" << std::endl;
+                    }
+                    reset_burst_state();
+                }
+            }
+        }
+        break;
+    }
     }
 }
 
-bool cospas_burst_detector_impl::is_burst_ready()
-{
-    return d_state == BURST_COMPLETE;
-}
+bool cospas_burst_detector_impl::is_burst_ready() { return d_state == BURST_COMPLETE; }
 
 void cospas_burst_detector_impl::extract_burst(std::vector<gr_complex>& burst_data)
 {
@@ -216,6 +450,9 @@ void cospas_burst_detector_impl::reset_burst_state()
 {
     d_state = IDLE;
     d_burst_samples.clear();
+    d_gap_buffer.clear();
+    d_snr_history.clear();
+    d_burst_mean_snr = 0.0f;
     d_silence_count = 0;
 }
 
@@ -251,7 +488,8 @@ int cospas_burst_detector_impl::general_work(int noutput_items,
             }
 
             // Tag de fin de burst (à la dernière position)
-            add_item_tag(0, nitems_written(0) + produced - 1,
+            add_item_tag(0,
+                         nitems_written(0) + produced - 1,
                          pmt::intern("burst_end"),
                          pmt::PMT_T);
 
@@ -277,10 +515,13 @@ int cospas_burst_detector_impl::general_work(int noutput_items,
 
         // Envoyer le burst via message port (asynchrone)
         pmt::pmt_t burst_msg = pmt::make_dict();
-        pmt::pmt_t samples_vec = pmt::init_c32vector(d_output_burst.size(), d_output_burst.data());
+        pmt::pmt_t samples_vec =
+            pmt::init_c32vector(d_output_burst.size(), d_output_burst.data());
         burst_msg = pmt::dict_add(burst_msg, pmt::mp("samples"), samples_vec);
-        burst_msg = pmt::dict_add(burst_msg, pmt::mp("size"), pmt::from_long(d_output_burst.size()));
-        burst_msg = pmt::dict_add(burst_msg, pmt::mp("timestamp"), pmt::from_uint64(nitems_read(0)));
+        burst_msg = pmt::dict_add(
+            burst_msg, pmt::mp("size"), pmt::from_long(d_output_burst.size()));
+        burst_msg = pmt::dict_add(
+            burst_msg, pmt::mp("timestamp"), pmt::from_uint64(nitems_read(0)));
 
         message_port_pub(pmt::mp("bursts"), burst_msg);
 
@@ -290,26 +531,29 @@ int cospas_burst_detector_impl::general_work(int noutput_items,
         }
 
         // Tag de debut de burst (pour compatibilité stream)
-        add_item_tag(0, nitems_written(0),
+        add_item_tag(0,
+                     nitems_written(0),
                      pmt::intern("burst_start"),
                      pmt::from_long(d_output_burst.size()));
 
         // Produire autant que possible immédiatement
-        size_t to_copy = std::min(d_output_burst.size(), static_cast<size_t>(noutput_items));
+        size_t to_copy =
+            std::min(d_output_burst.size(), static_cast<size_t>(noutput_items));
         std::memcpy(out, &d_output_burst[0], to_copy * sizeof(gr_complex));
         d_output_offset = to_copy;
         produced = static_cast<int>(to_copy);
 
         if (d_debug_mode) {
             if (to_copy < d_output_burst.size()) {
-                std::cout << "[BURST_DETECTOR] Burst partial output: "
-                          << to_copy << " / " << d_output_burst.size() << " samples" << std::endl;
+                std::cout << "[BURST_DETECTOR] Burst partial output: " << to_copy << " / "
+                          << d_output_burst.size() << " samples" << std::endl;
             } else {
                 std::cout << "[BURST_DETECTOR] Burst fully output ("
                           << d_output_burst.size() << " samples)" << std::endl;
 
                 // Tag de fin de burst (à la dernière position)
-                add_item_tag(0, nitems_written(0) + produced - 1,
+                add_item_tag(0,
+                             nitems_written(0) + produced - 1,
                              pmt::intern("burst_end"),
                              pmt::PMT_T);
 

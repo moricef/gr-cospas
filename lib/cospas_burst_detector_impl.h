@@ -33,7 +33,9 @@ private:
     // Seuil adaptatif
     float d_adaptive_threshold; // Seuil calculé automatiquement
     bool d_threshold_initialized; // Indicateur de calcul du seuil
-    std::vector<float> d_amplitude_buffer; // Buffer pour calcul statistique
+    std::vector<float> d_amplitude_buffer; // Buffer pour calcul statistique (corrélation)
+    std::vector<float> d_amplitude_raw_buffer; // Buffer pour calcul p95 amplitude (squelch)
+    float d_calibration_p95_amplitude; // p95 d'amplitude pour squelch adaptatif
 
     // Autocorrélation
     int d_samples_per_bit;
@@ -48,12 +50,18 @@ private:
     enum BurstState {
         IDLE,           // Pas de burst en cours
         IN_BURST,       // Burst en cours de capture
+        IN_GAP,         // Dans un creux potentiel (interpolation)
         BURST_COMPLETE  // Burst capturé, prêt a sortir
     };
 
     BurstState d_state;
     std::vector<gr_complex> d_burst_samples;  // Échantillons du burst en cours de détection
     int d_silence_count;                       // Compteur d'échantillons sous le seuil
+
+    // Triple technique anti-fragmentation
+    std::vector<gr_complex> d_gap_buffer;      // Buffer temporaire pour creux (interpolation)
+    std::vector<float> d_snr_history;          // Historique SNR pour tracking adaptatif
+    float d_burst_mean_snr;                     // SNR moyen du burst en cours
 
     // Sortie du burst en cours (peut être produit sur plusieurs appels)
     std::vector<gr_complex> d_output_burst;   // Burst prêt a sortir
