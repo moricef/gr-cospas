@@ -226,8 +226,10 @@ void cospas_burst_detector_impl::process_sample(const gr_complex& sample)
 
             if (d_silence_count >= GAP_DETECT_THRESHOLD && d_gap_buffer.empty()) {
                 // Début d'un creux potentiel → passer en mode GAP
+                // NE PAS transférer les échantillons déjà dans burst_samples
+                // Seulement les nouveaux échantillons (à partir de maintenant) vont dans gap_buffer
                 d_state = IN_GAP;
-                d_gap_buffer.clear();
+                d_gap_buffer.push_back(sample);  // Ajouter l'échantillon courant au gap
                 if (d_debug_mode) {
                     std::cout << "[BURST_DETECTOR] Potential gap detected at silence_count="
                               << d_silence_count << std::endl;
@@ -336,20 +338,9 @@ void cospas_burst_detector_impl::process_sample(const gr_complex& sample)
         d_gap_buffer.push_back(sample);
         d_silence_count++;
 
-        // Calculer SNR du creux
-        float instant_snr = amplitude / (d_adaptive_threshold + 1e-9f);
-
-        // Seuil bas adaptatif pour sortir du creux
-        float gap_exit_threshold;
-        if (d_burst_mean_snr > 300.0f) {
-            gap_exit_threshold = d_adaptive_threshold * 0.5f;
-        } else if (d_burst_mean_snr > 100.0f) {
-            gap_exit_threshold = d_adaptive_threshold * 0.4f;
-        } else if (d_burst_mean_snr > 30.0f) {
-            gap_exit_threshold = d_adaptive_threshold * 0.3f;
-        } else {
-            gap_exit_threshold = d_adaptive_threshold * 0.2f;
-        }
+        // Pour sortir du gap, on utilise le seuil HAUT (detection initiale)
+        // Ceci garantit qu'on ne sort que si le signal est vraiment revenu fort
+        float gap_exit_threshold = d_adaptive_threshold;
 
         if (correlation > gap_exit_threshold) {
             // Signal revenu → creux confirmé court, interpoler
