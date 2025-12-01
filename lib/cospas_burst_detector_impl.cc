@@ -108,12 +108,16 @@ void cospas_burst_detector_impl::process_sample(const gr_complex& sample)
     if (d_threshold_initialized) {
         float squelch_threshold;
 
-        if (d_calibration_p95_amplitude > 0.02f) {
-            // Signal fort: squelch fixe agressif pour délimiter correctement le burst
-            squelch_threshold = 0.005f;
+        if (d_calibration_p95_amplitude >= 0.15f) {
+            // Signal fort: squelch strict pour délimiter correctement le burst
+            squelch_threshold = 0.10f;
+        } else if (d_calibration_p95_amplitude <= 0.02f) {
+            // Signal faible: squelch relaxé pour ne pas bloquer le signal
+            squelch_threshold = 0.01f;
         } else {
-            // Signal faible: squelch proportionnel pour ne pas bloquer le signal
-            squelch_threshold = d_calibration_p95_amplitude * 0.3f;
+            // Signal moyen: interpolation linéaire
+            float ratio = (d_calibration_p95_amplitude - 0.02f) / (0.15f - 0.02f);
+            squelch_threshold = 0.01f + ratio * (0.10f - 0.01f);
         }
 
         if (amplitude < squelch_threshold && d_state == IDLE) {
