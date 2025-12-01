@@ -104,7 +104,40 @@ void cospas_burst_detector_impl::process_sample(const gr_complex& sample)
     d_correlation_buffer[d_buffer_index] = amplitude;
     d_buffer_index = (d_buffer_index + 1) % (2 * d_samples_per_bit);
 
+    // Squelch adaptatif
+    if (d_threshold_initialized) {
+        float squelch_threshold;
+        if (d_calibration_p95_amplitude >= 0.15f) {
+            squelch_threshold = 0.10f;
+        } else if (d_calibration_p95_amplitude <= 0.02f) {
+            squelch_threshold = 0.01f;
+        } else {
+            float ratio = (d_calibration_p95_amplitude - 0.02f) / (0.15f - 0.02f);
+            squelch_threshold = 0.01f + ratio * (0.10f - 0.01f);
+        }
+
+        if (amplitude < squelch_threshold && d_state == IDLE) {
+            return;
+        }
+    }
+
     float correlation = compute_autocorrelation();
+
+    // Decay adaptatif
+    if (d_threshold_initialized) {
+        const float decay_factor = 0.9999f;
+        d_adaptive_threshold *= decay_factor;
+
+        const float floor_threshold = 1e-6f;
+        if (d_adaptive_threshold < floor_threshold) {
+            d_adaptive_threshold = floor_threshold;
+        }
+
+        float target_threshold = d_threshold_factor * correlation;
+        if (target_threshold > d_adaptive_threshold) {
+            d_adaptive_threshold = target_threshold;
+        }
+    }
 
     if (!d_threshold_initialized) {
         d_amplitude_buffer.push_back(correlation);
@@ -124,7 +157,7 @@ void cospas_burst_detector_impl::process_sample(const gr_complex& sample)
 
             d_adaptive_threshold = d_threshold_factor * max_corr;
 
-            const float MIN_THRESHOLD = 0.0001f;
+            const float MIN_THRESHOLD = 1e-6f;
             if (d_adaptive_threshold < MIN_THRESHOLD) {
                 d_adaptive_threshold = MIN_THRESHOLD;
             }
