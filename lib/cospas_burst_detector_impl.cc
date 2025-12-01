@@ -104,10 +104,17 @@ void cospas_burst_detector_impl::process_sample(const gr_complex& sample)
     d_correlation_buffer[d_buffer_index] = amplitude;
     d_buffer_index = (d_buffer_index + 1) % (2 * d_samples_per_bit);
 
-    // Squelch adaptatif proportionnel au P95 (fonctionne signal fort ET faible)
+    // Squelch hybride adaptatif au niveau du signal
     if (d_threshold_initialized) {
-        // Seuil = 30% du P95 mesuré pendant calibration
-        float squelch_threshold = d_calibration_p95_amplitude * 0.3f;
+        float squelch_threshold;
+
+        if (d_calibration_p95_amplitude > 0.02f) {
+            // Signal fort: squelch fixe agressif pour délimiter correctement le burst
+            squelch_threshold = 0.005f;
+        } else {
+            // Signal faible: squelch proportionnel pour ne pas bloquer le signal
+            squelch_threshold = d_calibration_p95_amplitude * 0.3f;
+        }
 
         if (amplitude < squelch_threshold && d_state == IDLE) {
             return;
