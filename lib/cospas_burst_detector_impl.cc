@@ -104,16 +104,16 @@ void cospas_burst_detector_impl::process_sample(const gr_complex& sample)
     d_correlation_buffer[d_buffer_index] = amplitude;
     d_buffer_index = (d_buffer_index + 1) % (2 * d_samples_per_bit);
 
-    // Squelch adaptatif
+    // Squelch adaptatif (seuils réduits pour moins de troncature)
     if (d_threshold_initialized) {
         float squelch_threshold;
         if (d_calibration_p95_amplitude >= 0.15f) {
-            squelch_threshold = 0.10f;
+            squelch_threshold = 0.05f;  // Réduit de 0.10f
         } else if (d_calibration_p95_amplitude <= 0.02f) {
-            squelch_threshold = 0.01f;
+            squelch_threshold = 0.005f;  // Réduit de 0.01f
         } else {
             float ratio = (d_calibration_p95_amplitude - 0.02f) / (0.15f - 0.02f);
-            squelch_threshold = 0.01f + ratio * (0.10f - 0.01f);
+            squelch_threshold = 0.005f + ratio * (0.05f - 0.005f);
         }
 
         if (amplitude < squelch_threshold && d_state == IDLE) {
