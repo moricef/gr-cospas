@@ -104,20 +104,21 @@ void cospas_burst_detector_impl::process_sample(const gr_complex& sample)
     d_correlation_buffer[d_buffer_index] = amplitude;
     d_buffer_index = (d_buffer_index + 1) % (2 * d_samples_per_bit);
 
-    // Squelch hybride adaptatif au niveau du signal
+    // Squelch adaptatif juste au-dessus du plancher de bruit (~0.005)
+    // Bloque seulement le bruit, pas le préambule/postambule
     if (d_threshold_initialized) {
         float squelch_threshold;
 
         if (d_calibration_p95_amplitude >= 0.15f) {
-            // Signal fort: squelch strict pour délimiter correctement le burst
-            squelch_threshold = 0.10f;
+            // Signal fort: squelch légèrement plus haut pour délimiter le burst
+            squelch_threshold = 0.008f;
         } else if (d_calibration_p95_amplitude <= 0.02f) {
-            // Signal faible: squelch relaxé pour ne pas bloquer le signal
-            squelch_threshold = 0.01f;
+            // Signal faible: squelch minimal juste au-dessus du bruit
+            squelch_threshold = 0.006f;
         } else {
             // Signal moyen: interpolation linéaire
             float ratio = (d_calibration_p95_amplitude - 0.02f) / (0.15f - 0.02f);
-            squelch_threshold = 0.01f + ratio * (0.10f - 0.01f);
+            squelch_threshold = 0.006f + ratio * (0.008f - 0.006f);
         }
 
         if (amplitude < squelch_threshold && d_state == IDLE) {
@@ -307,18 +308,15 @@ void cospas_burst_detector_impl::process_sample(const gr_complex& sample)
                 float burst_p95 = (p95_idx < amplitudes.size()) ? amplitudes[p95_idx]
                                                                 : amplitudes.back();
 
-                // Squelch adaptatif basé sur p95 d'amplitude de calibration
-                // Signal fort (calib_p95_amp >= 0.15): squelch strict 0.10
-                // Signal faible (calib_p95_amp <= 0.02): squelch relaxé 0.01
-                // Interpolation linéaire entre les deux
+                // Squelch adaptatif juste au-dessus du plancher de bruit
                 float squelch_threshold;
                 if (d_calibration_p95_amplitude >= 0.15f) {
-                    squelch_threshold = 0.10f;
+                    squelch_threshold = 0.008f;
                 } else if (d_calibration_p95_amplitude <= 0.02f) {
-                    squelch_threshold = 0.01f;
+                    squelch_threshold = 0.006f;
                 } else {
                     float ratio = (d_calibration_p95_amplitude - 0.02f) / (0.15f - 0.02f);
-                    squelch_threshold = 0.01f + ratio * (0.10f - 0.01f);
+                    squelch_threshold = 0.006f + ratio * (0.008f - 0.006f);
                 }
 
                 if (d_debug_mode) {
@@ -421,15 +419,15 @@ void cospas_burst_detector_impl::process_sample(const gr_complex& sample)
                 float burst_p95 = (p95_idx < amplitudes.size()) ? amplitudes[p95_idx]
                                                                 : amplitudes.back();
 
-                // Squelch adaptatif
+                // Squelch adaptatif juste au-dessus du plancher de bruit
                 float squelch_threshold;
                 if (d_calibration_p95_amplitude >= 0.15f) {
-                    squelch_threshold = 0.10f;
+                    squelch_threshold = 0.008f;
                 } else if (d_calibration_p95_amplitude <= 0.02f) {
-                    squelch_threshold = 0.01f;
+                    squelch_threshold = 0.006f;
                 } else {
                     float ratio = (d_calibration_p95_amplitude - 0.02f) / (0.15f - 0.02f);
-                    squelch_threshold = 0.01f + ratio * (0.10f - 0.01f);
+                    squelch_threshold = 0.006f + ratio * (0.008f - 0.006f);
                 }
 
                 if (d_debug_mode) {
