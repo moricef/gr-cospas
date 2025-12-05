@@ -127,7 +127,30 @@ void cospas_burst_detector_impl::process_sample(const gr_complex& sample)
         // Bloquer seulement si amplitude < squelch ET corrélation < seuil
         // Cela permet la détection par corrélation sur signaux faibles
         if (amplitude < squelch_threshold && correlation < d_adaptive_threshold) {
+            if (d_debug_mode) {
+                static int squelch_block_count = 0;
+                squelch_block_count++;
+                // Log toutes les 40000 samples bloqués (~1 seconde à 40kHz)
+                if (squelch_block_count % 40000 == 0) {
+                    std::cout << "[BURST_DETECTOR] Squelch bloque: amp=" << amplitude
+                              << " < " << squelch_threshold
+                              << ", corr=" << correlation
+                              << " < " << d_adaptive_threshold << std::endl;
+                }
+            }
             return;
+        }
+
+        // Log périodique en IDLE quand signal passe le squelch
+        if (d_debug_mode) {
+            static int idle_sample_count = 0;
+            idle_sample_count++;
+            // Log toutes les 10000 samples qui passent (~250 ms à 40kHz)
+            if (idle_sample_count % 10000 == 0) {
+                std::cout << "[BURST_DETECTOR] IDLE sample passed squelch: amp=" << amplitude
+                          << " (squelch=" << squelch_threshold << "), corr=" << correlation
+                          << " (threshold=" << d_adaptive_threshold << ")" << std::endl;
+            }
         }
     }
 
@@ -173,11 +196,23 @@ void cospas_burst_detector_impl::process_sample(const gr_complex& sample)
             d_threshold_initialized = true;
 
             if (d_debug_mode) {
+                // Calculer le squelch qui sera utilisé
+                float squelch_threshold;
+                if (d_calibration_p95_amplitude >= 0.15f) {
+                    squelch_threshold = 0.008f;
+                } else if (d_calibration_p95_amplitude <= 0.02f) {
+                    squelch_threshold = 0.006f;
+                } else {
+                    float ratio = (d_calibration_p95_amplitude - 0.02f) / (0.15f - 0.02f);
+                    squelch_threshold = 0.006f + ratio * (0.008f - 0.006f);
+                }
+
                 std::cout << "[BURST_DETECTOR] Calibration:" << std::endl;
                 std::cout << "  Max correlation: " << max_corr << std::endl;
-                std::cout << "  P95 amplitude: " << d_calibration_p95_amplitude
-                          << std::endl;
-                std::cout << "  Threshold: " << d_adaptive_threshold << std::endl;
+                std::cout << "  P95 amplitude: " << d_calibration_p95_amplitude << std::endl;
+                std::cout << "  Adaptive threshold: " << d_adaptive_threshold << std::endl;
+                std::cout << "  Squelch threshold: " << squelch_threshold << std::endl;
+                std::cout << "  Amplitude threshold: " << ((d_calibration_p95_amplitude >= 0.15f) ? 0.016f : 0.012f) << std::endl;
             }
 
             d_amplitude_buffer.clear();
@@ -201,8 +236,18 @@ void cospas_burst_detector_impl::process_sample(const gr_complex& sample)
             d_silence_count = 0;
 
             if (d_debug_mode) {
-                std::cout << "[BURST_DETECTOR] Burst started, corr=" << correlation
-                          << ", amp=" << amplitude << std::endl;
+                std::string reason;
+                if (correlation > d_adaptive_threshold && amplitude > amplitude_threshold) {
+                    reason = "CORR+AMP";
+                } else if (correlation > d_adaptive_threshold) {
+                    reason = "CORR";
+                } else {
+                    reason = "AMP";
+                }
+
+                std::cout << "[BURST_DETECTOR] *** Burst started (" << reason << ") ***" << std::endl;
+                std::cout << "  Correlation: " << correlation << " (threshold=" << d_adaptive_threshold << ")" << std::endl;
+                std::cout << "  Amplitude: " << amplitude << " (threshold=" << amplitude_threshold << ")" << std::endl;
             }
         }
         break;
