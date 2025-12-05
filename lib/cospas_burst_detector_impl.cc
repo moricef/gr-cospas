@@ -186,8 +186,12 @@ void cospas_burst_detector_impl::process_sample(const gr_complex& sample)
     }
 
     switch (d_state) {
-    case IDLE:
-        if (correlation > d_adaptive_threshold) {
+    case IDLE: {
+        // Démarrer sur corrélation (données Manchester) OU amplitude (préambule non modulé)
+        // Seuil amplitude = 2x le squelch pour éviter faux déclenchements
+        float amplitude_threshold = (d_calibration_p95_amplitude >= 0.15f) ? 0.016f : 0.012f;
+
+        if (correlation > d_adaptive_threshold || amplitude > amplitude_threshold) {
             d_state = IN_BURST;
             d_burst_samples.clear();
             d_burst_samples.push_back(sample);
@@ -195,10 +199,11 @@ void cospas_burst_detector_impl::process_sample(const gr_complex& sample)
 
             if (d_debug_mode) {
                 std::cout << "[BURST_DETECTOR] Burst started, corr=" << correlation
-                          << std::endl;
+                          << ", amp=" << amplitude << std::endl;
             }
         }
         break;
+    }
 
     case IN_BURST: {
         // === TECHNIQUE 2: Tracking SNR adaptatif ===
@@ -238,8 +243,11 @@ void cospas_burst_detector_impl::process_sample(const gr_complex& sample)
         }
 
         // Utiliser le seuil BAS pour rester dans le burst
-        if (correlation > threshold_low) {
-            // Signal présent (même faible) → continuer le burst
+        // Corrélation OU amplitude (pour préambule non modulé)
+        float amplitude_threshold = (d_calibration_p95_amplitude >= 0.15f) ? 0.016f : 0.012f;
+
+        if (correlation > threshold_low || amplitude > amplitude_threshold) {
+            // Signal présent (corrélation ou amplitude) → continuer le burst
             d_burst_samples.push_back(sample);
 
             // Si on était dans un creux, le valider et l'ajouter au burst
