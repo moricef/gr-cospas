@@ -104,9 +104,12 @@ void cospas_burst_detector_impl::process_sample(const gr_complex& sample)
     d_correlation_buffer[d_buffer_index] = amplitude;
     d_buffer_index = (d_buffer_index + 1) % (2 * d_samples_per_bit);
 
-    // Squelch adaptatif juste au-dessus du plancher de bruit (~0.005)
-    // Bloque seulement le bruit, pas le préambule/postambule
-    if (d_threshold_initialized) {
+    // Calculer la corrélation AVANT le squelch pour détecter signaux faibles
+    float correlation = compute_autocorrelation();
+
+    // Squelch adaptatif: bloque seulement si amplitude ET corrélation sont faibles
+    // Pour signaux faibles, la corrélation peut détecter même si amplitude < squelch
+    if (d_threshold_initialized && d_state == IDLE) {
         float squelch_threshold;
 
         if (d_calibration_p95_amplitude >= 0.15f) {
@@ -121,12 +124,12 @@ void cospas_burst_detector_impl::process_sample(const gr_complex& sample)
             squelch_threshold = 0.006f + ratio * (0.008f - 0.006f);
         }
 
-        if (amplitude < squelch_threshold && d_state == IDLE) {
+        // Bloquer seulement si amplitude < squelch ET corrélation < seuil
+        // Cela permet la détection par corrélation sur signaux faibles
+        if (amplitude < squelch_threshold && correlation < d_adaptive_threshold) {
             return;
         }
     }
-
-    float correlation = compute_autocorrelation();
 
     // Decay adaptatif
     if (d_threshold_initialized) {
