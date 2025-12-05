@@ -97,6 +97,17 @@ float cospas_burst_detector_impl::compute_autocorrelation()
     return std::abs(correlation);
 }
 
+void cospas_burst_detector_impl::forecast(int noutput_items,
+                                           gr_vector_int& ninput_items_required)
+{
+    // Le burst detector traite les échantillons en entrée indépendamment de la sortie
+    // On bufferise les bursts en interne, donc on demande toujours des échantillons
+    // Ratio 1:1 en moyenne (on peut produire 0 ou beaucoup selon si burst détecté)
+    for (unsigned int i = 0; i < ninput_items_required.size(); i++) {
+        ninput_items_required[i] = noutput_items;
+    }
+}
+
 void cospas_burst_detector_impl::process_sample(const gr_complex& sample)
 {
     float amplitude = std::abs(sample);

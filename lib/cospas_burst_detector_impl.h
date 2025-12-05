@@ -88,6 +88,7 @@ public:
     ~cospas_burst_detector_impl();
 
     // GNU Radio general_work
+    void forecast(int noutput_items, gr_vector_int& ninput_items_required) override;
     int general_work(int noutput_items,
                      gr_vector_int& ninput_items,
                      gr_vector_const_void_star& input_items,
