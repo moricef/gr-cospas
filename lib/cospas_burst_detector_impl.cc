@@ -596,6 +596,15 @@ int cospas_burst_detector_impl::general_work(int noutput_items,
     }
 
     // Priorité 2: Traiter les echantillons entrants
+    if (d_debug_mode) {
+        static int work_call_count = 0;
+        work_call_count++;
+        if (work_call_count % 1000 == 0) {
+            std::cout << "[BURST_DETECTOR] general_work() called " << work_call_count
+                      << " times, ninput=" << ninput << ", noutput=" << noutput_items << std::endl;
+        }
+    }
+
     for (int i = 0; i < ninput; i++) {
         process_sample(in[i]);
     }
