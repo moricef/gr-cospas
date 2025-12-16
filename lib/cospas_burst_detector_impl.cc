@@ -47,6 +47,7 @@ cospas_burst_detector_impl::cospas_burst_detector_impl(float sample_rate,
       d_state(IDLE),
       d_silence_count(0),
       d_burst_mean_snr(0.0f),
+      d_burst_detected_by_correlation(false),
       d_output_offset(0),
       d_bursts_detected(0)
 {
@@ -259,6 +260,9 @@ void cospas_burst_detector_impl::process_sample(const gr_complex& sample)
             d_burst_samples.push_back(sample);
             d_silence_count = 0;
 
+            // Marquer si détection par corrélation (Manchester) → bypass squelch validation
+            d_burst_detected_by_correlation = (correlation > d_adaptive_threshold);
+
             if (d_debug_mode) {
                 std::string reason;
                 if (correlation > d_adaptive_threshold && amplitude > amplitude_threshold) {
@@ -408,7 +412,8 @@ void cospas_burst_detector_impl::process_sample(const gr_complex& sample)
                               << ", squelch=" << squelch_threshold << std::endl;
                 }
 
-                if (burst_p95 < squelch_threshold) {
+                // Bypass squelch si burst détecté par corrélation (Manchester fiable)
+                if (!d_burst_detected_by_correlation && burst_p95 < squelch_threshold) {
                     if (d_debug_mode) {
                         std::cerr << "[BURST_DETECTOR] Burst rejected by squelch (p95="
                                   << burst_p95 << " < " << squelch_threshold << ")"
@@ -519,7 +524,8 @@ void cospas_burst_detector_impl::process_sample(const gr_complex& sample)
                               << ", mean_snr=" << d_burst_mean_snr << std::endl;
                 }
 
-                if (burst_p95 < squelch_threshold) {
+                // Bypass squelch si burst détecté par corrélation (Manchester fiable)
+                if (!d_burst_detected_by_correlation && burst_p95 < squelch_threshold) {
                     if (d_debug_mode) {
                         std::cerr << "[BURST_DETECTOR] Burst rejected by squelch (p95="
                                   << burst_p95 << " < " << squelch_threshold << ")"

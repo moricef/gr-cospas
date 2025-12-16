@@ -62,6 +62,7 @@ private:
     std::vector<gr_complex> d_gap_buffer;      // Buffer temporaire pour creux (interpolation)
     std::vector<float> d_snr_history;          // Historique SNR pour tracking adaptatif
     float d_burst_mean_snr;                     // SNR moyen du burst en cours
+    bool d_burst_detected_by_correlation;       // true si burst détecté par corrélation
 
     // Sortie du burst en cours (peut être produit sur plusieurs appels)
     std::vector<gr_complex> d_output_burst;   // Burst prêt a sortir
