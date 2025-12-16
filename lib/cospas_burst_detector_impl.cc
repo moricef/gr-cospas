@@ -102,19 +102,21 @@ void cospas_burst_detector_impl::forecast(int noutput_items,
 {
     // Le burst detector traite les échantillons en entrée indépendamment de la sortie
     // On bufferise les bursts en interne, donc on demande toujours des échantillons
-    // Ratio 1:1 en moyenne (on peut produire 0 ou beaucoup selon si burst détecté)
+    // IMPORTANT: Limiter à 1024 pour éviter de bloquer le scheduler si noutput_items est trop grand
+    int requested = std::min(noutput_items, 1024);
 
     if (d_debug_mode) {
         static int forecast_count = 0;
         forecast_count++;
         if (forecast_count % 1000 == 0) {
             std::cout << "[BURST_DETECTOR] forecast() called " << forecast_count
-                      << " times, requesting " << noutput_items << " input samples" << std::endl;
+                      << " times, noutput=" << noutput_items
+                      << ", requesting " << requested << " input samples" << std::endl;
         }
     }
 
     for (unsigned int i = 0; i < ninput_items_required.size(); i++) {
-        ninput_items_required[i] = noutput_items;
+        ninput_items_required[i] = requested;
     }
 }
 
