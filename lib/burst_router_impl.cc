@@ -52,14 +52,14 @@ burst_router_impl::burst_router_impl(float sample_rate, bool debug_mode)
     // Les bursts peuvent être > 32k samples (limite buffer GNU Radio)
 
     if (d_debug_mode) {
-        std::cout << "[ROUTER] Initialise:" << std::endl;
-        std::cout << "  Sample rate: " << d_sample_rate << " Hz" << std::endl;
-        std::cout << "  Mode: sortie progressive multi-appels" << std::endl;
-        std::cout << "  Stream Port 0: Bursts 1G (FGB - BPSK)" << std::endl;
-        std::cout << "  Stream Port 1: Bursts 2G (SGB - OQPSK DSSS)" << std::endl;
-        std::cout << "  Message Port 'bursts': entree" << std::endl;
-        std::cout << "  Message Port 'bursts_1g': sortie 1G" << std::endl;
-        std::cout << "  Message Port 'bursts_2g': sortie 2G" << std::endl;
+        std::cerr << "[ROUTER] Initialise:" << std::endl;
+        std::cerr << "  Sample rate: " << d_sample_rate << " Hz" << std::endl;
+        std::cerr << "  Mode: sortie progressive multi-appels" << std::endl;
+        std::cerr << "  Stream Port 0: Bursts 1G (FGB - BPSK)" << std::endl;
+        std::cerr << "  Stream Port 1: Bursts 2G (SGB - OQPSK DSSS)" << std::endl;
+        std::cerr << "  Message Port 'bursts': entree" << std::endl;
+        std::cerr << "  Message Port 'bursts_1g': sortie 1G" << std::endl;
+        std::cerr << "  Message Port 'bursts_2g': sortie 2G" << std::endl;
     }
 }
 
@@ -106,7 +106,7 @@ burst_router_impl::detect_burst_type(const std::vector<gr_complex>& samples)
 
     if (size < THRESHOLD_SIZE) {
         if (d_debug_mode) {
-            std::cout << "[ROUTER] Detection 1G par taille: " << size
+            std::cerr << "[ROUTER] Detection 1G par taille: " << size
                       << " samples < " << THRESHOLD_SIZE << std::endl;
         }
         return TYPE_1G;
@@ -121,14 +121,14 @@ burst_router_impl::detect_burst_type(const std::vector<gr_complex>& samples)
 
         if (has_carrier && size < THRESHOLD_SIZE * 2) {
             if (d_debug_mode) {
-                std::cout << "[ROUTER] Detection 1G par porteuse: presente" << std::endl;
+                std::cerr << "[ROUTER] Detection 1G par porteuse: presente" << std::endl;
             }
             return TYPE_1G;
         }
     }
 
     if (d_debug_mode) {
-        std::cout << "[ROUTER] Detection 2G: taille=" << size
+        std::cerr << "[ROUTER] Detection 2G: taille=" << size
                   << " samples >= " << THRESHOLD_SIZE << std::endl;
     }
     return TYPE_2G;
@@ -184,7 +184,7 @@ burst_router_impl::detect_unmodulated_carrier(const std::vector<gr_complex>& sam
     bool is_carrier = (stddev < CARRIER_THRESHOLD);
 
     if (d_debug_mode) {
-        std::cout << "[ROUTER] Analyse porteuse: stddev=" << stddev
+        std::cerr << "[ROUTER] Analyse porteuse: stddev=" << stddev
                   << " (seuil=" << CARRIER_THRESHOLD << ") -> "
                   << (is_carrier ? "OUI" : "NON") << std::endl;
     }
@@ -205,7 +205,7 @@ void burst_router_impl::forecast(int noutput_items,
         forecast_count++;
         // Log premier appel ET toutes les 1000 fois
         if (forecast_count == 1 || forecast_count % 1000 == 0) {
-            std::cout << "[ROUTER] forecast() called " << forecast_count
+            std::cerr << "[ROUTER] forecast() called " << forecast_count
                       << " times, noutput=" << noutput_items
                       << ", requesting " << requested << " input samples" << std::endl;
         }
@@ -259,11 +259,11 @@ int burst_router_impl::general_work(int noutput_items,
 
                 if (d_debug_mode) {
                     long size = pmt::to_long(tag.value);
-                    std::cout << "[ROUTER] NOUVEAU burst detecte (taille=" << size << ")" << std::endl;
+                    std::cerr << "[ROUTER] NOUVEAU burst detecte (taille=" << size << ")" << std::endl;
                 }
             } else {
                 if (d_debug_mode) {
-                    std::cout << "[ROUTER] Tag burst_start ignore (deja dans un burst)" << std::endl;
+                    std::cerr << "[ROUTER] Tag burst_start ignore (deja dans un burst)" << std::endl;
                 }
             }
         }
@@ -271,7 +271,7 @@ int burst_router_impl::general_work(int noutput_items,
             burst_end_found = true;
             // Ne pas mettre d_in_burst = false ici, on doit d'abord accumuler!
             if (d_debug_mode) {
-                std::cout << "[ROUTER] Tag burst_end detecte" << std::endl;
+                std::cerr << "[ROUTER] Tag burst_end detecte" << std::endl;
             }
         }
     }
@@ -282,7 +282,7 @@ int burst_router_impl::general_work(int noutput_items,
             d_current_burst.push_back(in[i]);
         }
         if (d_debug_mode && burst_start_found) {
-            std::cout << "[ROUTER] Premier fragment accumule: " << ninput << " samples" << std::endl;
+            std::cerr << "[ROUTER] Premier fragment accumule: " << ninput << " samples" << std::endl;
         }
     }
 
@@ -291,7 +291,7 @@ int burst_router_impl::general_work(int noutput_items,
         d_burst_ready_for_output = true;  // Maintenant pret a sortir!
         d_in_burst = false;  // Fin accumulation -> accepter prochain burst!
         if (d_debug_mode) {
-            std::cout << "[ROUTER] Burst complet: " << d_current_burst.size()
+            std::cerr << "[ROUTER] Burst complet: " << d_current_burst.size()
                       << " samples, pret pour sortie" << std::endl;
         }
     }
@@ -312,7 +312,7 @@ int burst_router_impl::general_work(int noutput_items,
             }
 
             if (d_debug_mode) {
-                std::cout << "[ROUTER] Debut sortie burst type "
+                std::cerr << "[ROUTER] Debut sortie burst type "
                           << (type == TYPE_1G ? "1G" : "2G")
                           << " (" << d_current_burst.size() << " samples)" << std::endl;
             }
@@ -329,7 +329,7 @@ int burst_router_impl::general_work(int noutput_items,
             produced0 = to_copy;
 
             if (d_debug_mode) {
-                std::cout << "[ROUTER] Sortie 1G: [" << d_burst_output_offset
+                std::cerr << "[ROUTER] Sortie 1G: [" << d_burst_output_offset
                           << ", " << (d_burst_output_offset + to_copy) << ") / "
                           << d_current_burst.size() << " samples" << std::endl;
             }
@@ -340,7 +340,7 @@ int burst_router_impl::general_work(int noutput_items,
             produced1 = to_copy;
 
             if (d_debug_mode) {
-                std::cout << "[ROUTER] Sortie 2G: [" << d_burst_output_offset
+                std::cerr << "[ROUTER] Sortie 2G: [" << d_burst_output_offset
                           << ", " << (d_burst_output_offset + to_copy) << ") / "
                           << d_current_burst.size() << " samples" << std::endl;
             }
@@ -352,7 +352,7 @@ int burst_router_impl::general_work(int noutput_items,
                         pmt::intern("burst_start"),
                         pmt::from_long(d_current_burst.size()));
             if (d_debug_mode) {
-                std::cout << "[ROUTER] Tag burst_start ajoute a offset "
+                std::cerr << "[ROUTER] Tag burst_start ajoute a offset "
                           << nitems_written(port) << " (taille=" << d_current_burst.size() << ")" << std::endl;
             }
         }
@@ -366,9 +366,9 @@ int burst_router_impl::general_work(int noutput_items,
                         pmt::intern("burst_end"),
                         pmt::from_long(d_current_burst.size()));
             if (d_debug_mode) {
-                std::cout << "[ROUTER] Tag burst_end ajoute a offset "
+                std::cerr << "[ROUTER] Tag burst_end ajoute a offset "
                           << (nitems_written(port) + to_copy - 1) << std::endl;
-                std::cout << "[ROUTER] Burst completement sorti -> reset" << std::endl;
+                std::cerr << "[ROUTER] Burst completement sorti -> reset" << std::endl;
             }
 
             d_current_burst.clear();

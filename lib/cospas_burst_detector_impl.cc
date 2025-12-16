@@ -64,15 +64,15 @@ cospas_burst_detector_impl::cospas_burst_detector_impl(float sample_rate,
     message_port_register_out(pmt::mp("bursts"));
 
     if (d_debug_mode) {
-        std::cout << "[BURST_DETECTOR] Initialized:" << std::endl;
-        std::cout << "  Sample rate: " << d_sample_rate << " Hz" << std::endl;
-        std::cout << "  Buffer size: " << d_buffer_size << " samples ("
+        std::cerr << "[BURST_DETECTOR] Initialized:" << std::endl;
+        std::cerr << "  Sample rate: " << d_sample_rate << " Hz" << std::endl;
+        std::cerr << "  Buffer size: " << d_buffer_size << " samples ("
                   << d_buffer_duration_ms << " ms)" << std::endl;
-        std::cout << "  Threshold factor: " << d_threshold_factor << std::endl;
-        std::cout << "  Min burst duration: " << d_min_burst_samples << " samples ("
+        std::cerr << "  Threshold factor: " << d_threshold_factor << std::endl;
+        std::cerr << "  Min burst duration: " << d_min_burst_samples << " samples ("
                   << d_min_burst_duration_ms << " ms)" << std::endl;
-        std::cout << "  Calibration samples: " << calibration_samples << std::endl;
-        std::cout << "  Message port 'bursts' enregistre" << std::endl;
+        std::cerr << "  Calibration samples: " << calibration_samples << std::endl;
+        std::cerr << "  Message port 'bursts' enregistre" << std::endl;
     }
 }
 
@@ -110,7 +110,7 @@ void cospas_burst_detector_impl::forecast(int noutput_items,
         forecast_count++;
         // Log premier appel ET toutes les 1000 fois
         if (forecast_count == 1 || forecast_count % 1000 == 0) {
-            std::cout << "[BURST_DETECTOR] forecast() called " << forecast_count
+            std::cerr << "[BURST_DETECTOR] forecast() called " << forecast_count
                       << " times, noutput=" << noutput_items
                       << ", requesting " << requested << " input samples" << std::endl;
         }
@@ -156,7 +156,7 @@ void cospas_burst_detector_impl::process_sample(const gr_complex& sample)
                 squelch_block_count++;
                 // Log toutes les 40000 samples bloqués (~1 seconde à 40kHz)
                 if (squelch_block_count % 40000 == 0) {
-                    std::cout << "[BURST_DETECTOR] Squelch bloque: amp=" << amplitude
+                    std::cerr << "[BURST_DETECTOR] Squelch bloque: amp=" << amplitude
                               << " < " << squelch_threshold
                               << ", corr=" << correlation
                               << " < " << d_adaptive_threshold << std::endl;
@@ -171,7 +171,7 @@ void cospas_burst_detector_impl::process_sample(const gr_complex& sample)
             idle_sample_count++;
             // Log toutes les 10000 samples qui passent (~250 ms à 40kHz)
             if (idle_sample_count % 10000 == 0) {
-                std::cout << "[BURST_DETECTOR] IDLE sample passed squelch: amp=" << amplitude
+                std::cerr << "[BURST_DETECTOR] IDLE sample passed squelch: amp=" << amplitude
                           << " (squelch=" << squelch_threshold << "), corr=" << correlation
                           << " (threshold=" << d_adaptive_threshold << ")" << std::endl;
             }
@@ -231,12 +231,12 @@ void cospas_burst_detector_impl::process_sample(const gr_complex& sample)
                     squelch_threshold = 0.006f + ratio * (0.008f - 0.006f);
                 }
 
-                std::cout << "[BURST_DETECTOR] Calibration:" << std::endl;
-                std::cout << "  Max correlation: " << max_corr << std::endl;
-                std::cout << "  P95 amplitude: " << d_calibration_p95_amplitude << std::endl;
-                std::cout << "  Adaptive threshold: " << d_adaptive_threshold << std::endl;
-                std::cout << "  Squelch threshold: " << squelch_threshold << std::endl;
-                std::cout << "  Amplitude threshold: " << ((d_calibration_p95_amplitude >= 0.15f) ? 0.016f : 0.012f) << std::endl;
+                std::cerr << "[BURST_DETECTOR] Calibration:" << std::endl;
+                std::cerr << "  Max correlation: " << max_corr << std::endl;
+                std::cerr << "  P95 amplitude: " << d_calibration_p95_amplitude << std::endl;
+                std::cerr << "  Adaptive threshold: " << d_adaptive_threshold << std::endl;
+                std::cerr << "  Squelch threshold: " << squelch_threshold << std::endl;
+                std::cerr << "  Amplitude threshold: " << ((d_calibration_p95_amplitude >= 0.15f) ? 0.016f : 0.012f) << std::endl;
             }
 
             d_amplitude_buffer.clear();
@@ -269,9 +269,9 @@ void cospas_burst_detector_impl::process_sample(const gr_complex& sample)
                     reason = "AMP";
                 }
 
-                std::cout << "[BURST_DETECTOR] *** Burst started (" << reason << ") ***" << std::endl;
-                std::cout << "  Correlation: " << correlation << " (threshold=" << d_adaptive_threshold << ")" << std::endl;
-                std::cout << "  Amplitude: " << amplitude << " (threshold=" << amplitude_threshold << ")" << std::endl;
+                std::cerr << "[BURST_DETECTOR] *** Burst started (" << reason << ") ***" << std::endl;
+                std::cerr << "  Correlation: " << correlation << " (threshold=" << d_adaptive_threshold << ")" << std::endl;
+                std::cerr << "  Amplitude: " << amplitude << " (threshold=" << amplitude_threshold << ")" << std::endl;
             }
         }
         break;
@@ -329,7 +329,7 @@ void cospas_burst_detector_impl::process_sample(const gr_complex& sample)
                                        d_gap_buffer.end());
                 d_gap_buffer.clear();
                 if (d_debug_mode) {
-                    std::cout << "[BURST_DETECTOR] Gap interpolated ("
+                    std::cerr << "[BURST_DETECTOR] Gap interpolated ("
                               << d_gap_buffer.size() << " samples)" << std::endl;
                 }
             }
@@ -349,7 +349,7 @@ void cospas_burst_detector_impl::process_sample(const gr_complex& sample)
                 d_state = IN_GAP;
                 d_gap_buffer.push_back(sample);  // Ajouter l'échantillon courant au gap
                 if (d_debug_mode) {
-                    std::cout << "[BURST_DETECTOR] Potential gap detected at silence_count="
+                    std::cerr << "[BURST_DETECTOR] Potential gap detected at silence_count="
                               << d_silence_count << std::endl;
                 }
             } else if (d_gap_buffer.empty()) {
@@ -400,7 +400,7 @@ void cospas_burst_detector_impl::process_sample(const gr_complex& sample)
                 }
 
                 if (d_debug_mode) {
-                    std::cout << "[BURST_DETECTOR] Fin detectee: amplitude=" << amplitude
+                    std::cerr << "[BURST_DETECTOR] Fin detectee: amplitude=" << amplitude
                               << ", threshold=" << d_adaptive_threshold
                               << ", silence_count=" << d_silence_count
                               << ", burst_duration=" << burst_duration
@@ -410,7 +410,7 @@ void cospas_burst_detector_impl::process_sample(const gr_complex& sample)
 
                 if (burst_p95 < squelch_threshold) {
                     if (d_debug_mode) {
-                        std::cout << "[BURST_DETECTOR] Burst rejected by squelch (p95="
+                        std::cerr << "[BURST_DETECTOR] Burst rejected by squelch (p95="
                                   << burst_p95 << " < " << squelch_threshold << ")"
                                   << std::endl;
                     }
@@ -424,7 +424,7 @@ void cospas_burst_detector_impl::process_sample(const gr_complex& sample)
                     d_bursts_detected++;
 
                     if (d_debug_mode) {
-                        std::cout << "[BURST_DETECTOR] Burst #" << d_bursts_detected
+                        std::cerr << "[BURST_DETECTOR] Burst #" << d_bursts_detected
                                   << " complete: duration=" << d_burst_samples.size()
                                   << " samples ("
                                   << (d_burst_samples.size() * 1000.0f / d_sample_rate)
@@ -433,7 +433,7 @@ void cospas_burst_detector_impl::process_sample(const gr_complex& sample)
                 } else {
                     // Burst trop court : ignorer
                     if (d_debug_mode) {
-                        std::cout << "[BURST_DETECTOR] Burst too short ("
+                        std::cerr << "[BURST_DETECTOR] Burst too short ("
                                   << burst_duration << " < " << d_min_burst_samples
                                   << ") - ignored" << std::endl;
                     }
@@ -468,7 +468,7 @@ void cospas_burst_detector_impl::process_sample(const gr_complex& sample)
             d_state = IN_BURST;
 
             if (d_debug_mode) {
-                std::cout << "[BURST_DETECTOR] Gap filled, back to IN_BURST" << std::endl;
+                std::cerr << "[BURST_DETECTOR] Gap filled, back to IN_BURST" << std::endl;
             }
         } else {
             // Seuil long adaptatif pour abandonner le creux
@@ -511,7 +511,7 @@ void cospas_burst_detector_impl::process_sample(const gr_complex& sample)
                 }
 
                 if (d_debug_mode) {
-                    std::cout << "[BURST_DETECTOR] Gap too long, burst end: amplitude="
+                    std::cerr << "[BURST_DETECTOR] Gap too long, burst end: amplitude="
                               << amplitude << ", silence_count=" << d_silence_count
                               << ", burst_duration=" << burst_duration
                               << ", p95=" << burst_p95
@@ -521,7 +521,7 @@ void cospas_burst_detector_impl::process_sample(const gr_complex& sample)
 
                 if (burst_p95 < squelch_threshold) {
                     if (d_debug_mode) {
-                        std::cout << "[BURST_DETECTOR] Burst rejected by squelch (p95="
+                        std::cerr << "[BURST_DETECTOR] Burst rejected by squelch (p95="
                                   << burst_p95 << " < " << squelch_threshold << ")"
                                   << std::endl;
                     }
@@ -531,7 +531,7 @@ void cospas_burst_detector_impl::process_sample(const gr_complex& sample)
                     d_bursts_detected++;
 
                     if (d_debug_mode) {
-                        std::cout << "[BURST_DETECTOR] Burst #" << d_bursts_detected
+                        std::cerr << "[BURST_DETECTOR] Burst #" << d_bursts_detected
                                   << " complete: duration=" << d_burst_samples.size()
                                   << " samples ("
                                   << (d_burst_samples.size() * 1000.0f / d_sample_rate)
@@ -539,7 +539,7 @@ void cospas_burst_detector_impl::process_sample(const gr_complex& sample)
                     }
                 } else {
                     if (d_debug_mode) {
-                        std::cout << "[BURST_DETECTOR] Burst too short ("
+                        std::cerr << "[BURST_DETECTOR] Burst too short ("
                                   << burst_duration << " < " << d_min_burst_samples
                                   << ") - ignored" << std::endl;
                     }
@@ -600,7 +600,7 @@ int cospas_burst_detector_impl::general_work(int noutput_items,
         // Si le burst est completement sorti, le libérer
         if (d_output_offset >= d_output_burst.size()) {
             if (d_debug_mode) {
-                std::cout << "[BURST_DETECTOR] Burst fully output ("
+                std::cerr << "[BURST_DETECTOR] Burst fully output ("
                           << d_output_burst.size() << " samples)" << std::endl;
             }
 
@@ -624,7 +624,7 @@ int cospas_burst_detector_impl::general_work(int noutput_items,
         static int work_call_count = 0;
         work_call_count++;
         if (work_call_count % 1000 == 0) {
-            std::cout << "[BURST_DETECTOR] general_work() called " << work_call_count
+            std::cerr << "[BURST_DETECTOR] general_work() called " << work_call_count
                       << " times, ninput=" << ninput << ", noutput=" << noutput_items << std::endl;
         }
     }
@@ -652,7 +652,7 @@ int cospas_burst_detector_impl::general_work(int noutput_items,
         message_port_pub(pmt::mp("bursts"), burst_msg);
 
         if (d_debug_mode) {
-            std::cout << "[BURST_DETECTOR] Message envoye: " << d_output_burst.size()
+            std::cerr << "[BURST_DETECTOR] Message envoye: " << d_output_burst.size()
                       << " samples via port 'bursts'" << std::endl;
         }
 
@@ -671,10 +671,10 @@ int cospas_burst_detector_impl::general_work(int noutput_items,
 
         if (d_debug_mode) {
             if (to_copy < d_output_burst.size()) {
-                std::cout << "[BURST_DETECTOR] Burst partial output: " << to_copy << " / "
+                std::cerr << "[BURST_DETECTOR] Burst partial output: " << to_copy << " / "
                           << d_output_burst.size() << " samples" << std::endl;
             } else {
-                std::cout << "[BURST_DETECTOR] Burst fully output ("
+                std::cerr << "[BURST_DETECTOR] Burst fully output ("
                           << d_output_burst.size() << " samples)" << std::endl;
 
                 // Tag de fin de burst (à la dernière position)
