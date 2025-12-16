@@ -574,6 +574,10 @@ void cospas_burst_detector_impl::extract_burst(std::vector<gr_complex>& burst_da
 
 void cospas_burst_detector_impl::reset_burst_state()
 {
+    if (d_debug_mode && d_state != IDLE) {
+        std::cerr << "[BURST_DETECTOR] reset_burst_state() called from state "
+                  << d_state << ", burst_samples=" << d_burst_samples.size() << std::endl;
+    }
     d_state = IDLE;
     d_burst_samples.clear();
     d_gap_buffer.clear();
