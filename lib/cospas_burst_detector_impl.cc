@@ -600,6 +600,18 @@ int cospas_burst_detector_impl::general_work(int noutput_items,
     int produced = 0;
     int consumed = 0;
 
+    if (d_debug_mode) {
+        static int gw_call_count = 0;
+        static int zero_input_count = 0;
+        gw_call_count++;
+        if (ninput == 0) zero_input_count++;
+        if (gw_call_count % 1000 == 0) {
+            std::cerr << "[BURST_DETECTOR] general_work() #" << gw_call_count
+                      << ", ninput=" << ninput << ", zero_inputs=" << zero_input_count
+                      << ", state=" << d_state << std::endl;
+        }
+    }
+
     // Priorité 1: Si on a un burst en cours de sortie, continuer a le produire
     if (d_output_offset < d_output_burst.size()) {
         if (d_debug_mode) {
