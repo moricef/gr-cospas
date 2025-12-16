@@ -455,6 +455,9 @@ void cospas_burst_detector_impl::process_sample(const gr_complex& sample)
 
     case IN_GAP: {
         // Stocker échantillons du creux temporairement
+        if (d_debug_mode && d_gap_buffer.empty()) {
+            std::cerr << "[BURST_DETECTOR] First sample in IN_GAP state" << std::endl;
+        }
         d_gap_buffer.push_back(sample);
         d_silence_count++;
 
