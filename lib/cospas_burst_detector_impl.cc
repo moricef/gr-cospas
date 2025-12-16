@@ -602,6 +602,15 @@ int cospas_burst_detector_impl::general_work(int noutput_items,
 
     // Priorité 1: Si on a un burst en cours de sortie, continuer a le produire
     if (d_output_offset < d_output_burst.size()) {
+        if (d_debug_mode) {
+            static int output_block_count = 0;
+            output_block_count++;
+            if (output_block_count % 100 == 0) {
+                std::cerr << "[BURST_DETECTOR] Blocked " << output_block_count
+                          << " times outputting burst, offset=" << d_output_offset
+                          << "/" << d_output_burst.size() << std::endl;
+            }
+        }
         size_t remaining = d_output_burst.size() - d_output_offset;
         size_t to_copy = std::min(remaining, static_cast<size_t>(noutput_items));
 
@@ -639,6 +648,17 @@ int cospas_burst_detector_impl::general_work(int noutput_items,
         if (work_call_count % 1000 == 0) {
             std::cerr << "[BURST_DETECTOR] general_work() called " << work_call_count
                       << " times, ninput=" << ninput << ", noutput=" << noutput_items << std::endl;
+        }
+    }
+
+    if (d_debug_mode) {
+        static int total_samples_processed = 0;
+        static int last_log_at = 0;
+        total_samples_processed += ninput;
+        if (total_samples_processed - last_log_at >= 40000) {  // Log every 1 second
+            std::cerr << "[BURST_DETECTOR] Processed " << total_samples_processed
+                      << " samples, state=" << d_state << std::endl;
+            last_log_at = total_samples_processed;
         }
     }
 
