@@ -203,7 +203,8 @@ void burst_router_impl::forecast(int noutput_items,
     if (d_debug_mode) {
         static int forecast_count = 0;
         forecast_count++;
-        if (forecast_count % 1000 == 0) {
+        // Log premier appel ET toutes les 1000 fois
+        if (forecast_count == 1 || forecast_count % 1000 == 0) {
             std::cout << "[ROUTER] forecast() called " << forecast_count
                       << " times, noutput=" << noutput_items
                       << ", requesting " << requested << " input samples" << std::endl;

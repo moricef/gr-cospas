@@ -92,7 +92,7 @@ class test_rtlsdr_demod(gr.top_block):
         # Burst Router
         self.burst_router = cospas.burst_router(
             sample_rate=sample_rate,
-            debug_mode=False  # Debug OFF
+            debug_mode=True  # Debug ON pour voir taille bursts
         )
 
         # Demodulateur 1G
