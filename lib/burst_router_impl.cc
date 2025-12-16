@@ -192,6 +192,29 @@ burst_router_impl::detect_unmodulated_carrier(const std::vector<gr_complex>& sam
     return is_carrier;
 }
 
+void burst_router_impl::forecast(int noutput_items,
+                                   gr_vector_int& ninput_items_required)
+{
+    // Le router copie les échantillons d'entrée vers les sorties
+    // Demander au moins autant d'échantillons en entrée qu'en sortie
+    // Limiter à 1024 pour éviter de bloquer le scheduler
+    int requested = std::min(noutput_items, 1024);
+
+    if (d_debug_mode) {
+        static int forecast_count = 0;
+        forecast_count++;
+        if (forecast_count % 1000 == 0) {
+            std::cout << "[ROUTER] forecast() called " << forecast_count
+                      << " times, noutput=" << noutput_items
+                      << ", requesting " << requested << " input samples" << std::endl;
+        }
+    }
+
+    for (unsigned int i = 0; i < ninput_items_required.size(); i++) {
+        ninput_items_required[i] = requested;
+    }
+}
+
 int burst_router_impl::general_work(int noutput_items,
                                      gr_vector_int& ninput_items,
                                      gr_vector_const_void_star& input_items,
