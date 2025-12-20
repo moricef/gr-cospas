@@ -1,0 +1,109 @@
+git log --all --date=format:'%Y-%m-%d %H:%M:%S' --pretty=format:'%h %ad %s' --date-order)
+  ⎿  7d71726 2025-11-28 19:26:22 On main: Save local data changes before switching branch                      
+     f8a476b 2025-11-28 19:26:22 index on main: e5ddb45 Fix burst detector for weak signals
+     e5ddb45 2025-11-28 12:30:00 Fix burst detector for weak signals
+     98a12a5 2025-11-27 22:47:17 Update README with continuous capture loop documentation
+     464093a 2025-11-27 22:45:11 Implement continuous capture loop in scan406_iq.py
+     63b3cfe 2025-11-27 22:11:38 Update scan406_iq.py documentation with new features
+     3961e4e 2025-11-27 22:09:57 Update README with autocorrelation and adaptive threshold features
+     0f8c5a8 2025-11-27 22:06:18 Merge branch 'feature/autocorrelation' into main
+     3afefc8 2025-11-27 21:53:34 Implémente seuil adaptatif de variance de phase
+     a7bc205 2025-11-27 21:26:13 Désactive debug verbeux des 120 bits message (trop de logs)
+     157da98 2025-11-27 20:44:44 Supprime filtre amplitude - traite tous échantillons (75% succès distant)
+     e73801f 2025-11-27 20:00:01 Améliore robustesse démodulation signaux faibles (CNES 80km)
+     c86693e 2025-11-27 16:41:37 Add autocorrelation burst detection (inspired by dec406)
+     c4c2fda 2025-11-21 10:16:14 Add data/config_mail.txt to .gitignore (local config)
+     f0da7cf 2025-11-21 10:12:00 Improve README with detailed architecture and troubleshooting
+     a8bac90 2025-11-21 10:06:12 Update config_mail.txt
+     226ca32 2025-11-20 11:36:04 Remove obsolete 1G scripts (moved to obsolete/)
+     fd00834 2025-11-20 09:12:20 Add *.raw and large binaries to .gitignore
+     377b0ab 2025-11-20 09:12:20 Add *.raw and large binaries to .gitignore
+     d34b221 2025-11-20 09:03:55 Add main README.md with project documentation
+     e54ac4f 2025-11-20 09:03:55 Add main README.md with project documentation
+     4adb44b 2025-11-20 08:31:13 Fix scan406_iq.py: Keep flowgraph open for 56s to prevent CRC errors
+     1091166 2025-11-20 08:31:13 Fix scan406_iq.py: Keep flowgraph open for 56s to prevent CRC errors
+     6d682df 2025-11-19 18:22:20 Add cospas_generator.py to installation files
+     bdeaebd 2025-11-19 18:22:20 Add cospas_generator.py to installation files
+     3cdb0db 2025-11-19 18:18:38 Rename Docs/ to docs/ for GNU Radio compatibility
+     8d885d2 2025-11-19 18:18:38 Rename Docs/ to docs/ for GNU Radio compatibility
+     9d54e2f 2025-11-19 16:47:58 Reorganize project structure and add scan406_iq.py scanner
+     29431c4 2025-11-19 16:47:58 Reorganize project structure and add scan406_iq.py scanner
+     c984ae2 2025-11-19 13:27:32 Implement COSPAS-SARSAT 1G demodulator with 92% success rate
+     d10b810 2025-11-19 13:27:32 Implement COSPAS-SARSAT 1G demodulator with 92% success rate
+     dc89a3d 2025-11-19 13:05:13 Final COSPAS-SARSAT demodulator: 92% success rate with d_mu=-20
+     7b3897e 2025-11-19 12:10:00 Enable BCH error correction and disable verbose debug logs
+     790ecc5 2025-11-19 11:53:14 Initialize d_mu to -20 and adjust gains for faster convergence
+     73949a3 2025-11-19 11:13:55 Optimize timing tracking parameters for better convergence
+     24966ba 2025-11-19 10:53:20 Implement adaptive Manchester timing tracking with PLL
+     bb9e4c5 2025-11-18 11:52:36 Improve burst capture and signal handling for better demodulation
+     427da20 2025-11-17 22:47:28 Replace special chars in dec406 output (≤ -> <=, ° -> deg)
+     1fc6287 2025-11-17 22:43:32 Remove accents from C++ output strings for clean logs
+     862a951 2025-11-17 20:25:38 Remove accents from test_rtlsdr.py for better compatibility
+     8e7391e 2025-11-17 20:22:46 Restore 20 kHz lowpass filter as optimal bandwidth
+     172de22 2025-11-17 20:14:41 Add test scripts for message mode and frequency drift analysis
+     7ee7900 2025-11-17 20:12:16 Add lowpass filter to improve real-time demodulation quality
+     9ce22b7 2025-11-17 19:03:28 Add Normal Mode Protocol frame sync pattern (0x02F)
+     7c3ea85 2025-11-17 18:59:40 Switch demodulator to message-based input for complete burst processing
+     4b91df1 2025-11-17 00:44:58 Adjust accumulator threshold and add residual linearity check
+     786e17d 2025-11-16 23:27:35 Fix frequency estimation: detect carrier before accumulating samples
+     52f037b 2025-11-16 08:31:31 Add PLL infrastructure (NOT working for BPSK - documentation only)
+     e8c2c5d 2025-11-15 22:54:08 Integrate dec406 decoder directly into GNU Radio demodulator
+     82411b8 2025-11-15 22:09:15 Add RTL-SDR integration with proper signal normalization and demodulator fixes
+     7187e37 2025-11-15 18:16:25 Fix router progressive output and demodulator tag handling for complete chain
+     799beba 2025-11-15 16:19:27 WIP: Message Ports investigation - unreliable delivery discovered
+     6c710a9 2025-11-15 15:28:34 Add burst_router for automatic 1G/2G beacon detection and routing
+     191432b 2025-11-15 15:12:48 Add stream tags for burst boundaries (burst_start/burst_end)
+     cc1fddb 2025-11-15 14:57:45 Fix: Burst detector outputs full bursts across multiple general_work() calls
+     241f836 2025-11-15 14:52:45 Add cospas_burst_detector block with adaptive threshold
+     06d50e9 2025-11-15 14:01:46 Add conditional AGC with 95th percentile for signal level tolerance
+     943f421 2025-11-15 11:50:34 Fix: Remove infinite REWIND loop causing 56000+ false detections
+     26fed8f 2025-11-14 21:29:22 Add visualization plot for GQRX capture analysis
+     10a96d0 2025-11-14 20:56:15 Reduce adaptive correction period to 500 samples during demodulation
+     c27dc07 2025-11-14 20:44:58 WIP: Save current state before reverting - new captures and tools
+     543a8b7 2025-11-14 19:07:54 Support both long (144-bit) and short (112-bit) COSPAS-SARSAT frames
+     1c54f4b 2025-11-14 18:58:50 Continue adaptive frequency correction during demodulation with reduced rate
+     af25b09 2025-11-14 18:41:18 Add PLL for phase tracking during demodulation and resampling tools
+     397dd13 2025-11-14 14:35:20 Adjust demodulator for real noisy signals
+     6868fb8 2025-11-14 13:24:21 Fix demodulator to output all 144 bits correctly
+     339f57e 2025-11-14 09:30:37 Initialize d_sample_count when entering STATE_DEMODULATE
+     cb48e03 2025-11-14 08:42:54 Restore working demodulation algorithm from f0d945d
+     ef5c8d8 2025-11-13 22:41:52 WIP: Implement double buffer ping-pong to avoid phase overwriting
+     b01a7f8 2025-11-13 20:48:08 Remove buffer resize that was zeroing phases + remove premature stop check
+     0ced627 2025-11-13 10:20:45 Fix renaming: update CMakeLists and Python bindings
+     828d49d 2025-11-13 10:14:51 Rename decoder to demodulator throughout codebase
+     361c00b 2025-11-13 10:06:36 Transform decoder into pure BPSK demodulator with bit output
+     f0d945d 2025-11-11 21:57:13 Fix bit synchronization and add Hamming distance tolerance for frame sync
+     f371594 2025-11-11 21:24:09 Fix 1G decoder state transitions and add adaptive frequency correction freeze
+     1b112b9 2025-11-11 13:56:38 Add debug output for BPSK decoding investigation
+     ca10da5 2025-11-11 13:05:25 Carrier detection working with frequency offset correction
+     4a915f7 2025-11-11 12:42:49 Fix carrier detection with frequency offset correction
+     8ab0ffc 2025-11-11 11:58:43 Fix frequency offset correction: now detecting and correcting -365 Hz offset
+     2ea300b 2025-11-11 11:40:25 Add automatic frequency offset correction to 1G decoder
+     9f78c0c 2025-10-23 23:31:21 Update 2G tools: Add IQ demodulator status and cleanup
+     39af7e2 2025-10-18 12:29:08 Fix T.018 compliance: change sample rate to 384 kHz
+     403d2a2 2025-10-18 11:32:50 Add 1G/2G IQ generators and fix examples classification
+     1df0715 2025-10-17 20:21:49 Reorganize project: Separate 1G and 2G files into subdirectories
+     a709b9c 2025-10-12 19:43:34 Add Qt GUI for COSPAS-SARSAT decoder
+     28d3321 2025-10-12 11:16:59 Update README: Mark non-determinism issue as SOLVED
+     02cf681 2025-10-12 11:15:27 MAJOR: Implement buffer accumulation - Achieve 100% determinism!
+     6f3c1c8 2025-10-12 11:06:34 Merge branch 'main' of https://github.com/moricef/gr-cospas
+     6be4c32 2025-10-12 11:06:12 Add external validation from Mistral AI
+     752a5b0 2025-10-12 10:59:43 Update LICENSE
+     84d489f 2025-10-12 10:58:18 Update README.md
+     aff908f 2025-10-12 10:21:57 Merge branch 'main' of https://github.com/moricef/gr-cospas
+     6bd94fb 2025-10-12 10:20:07 Initial commit: COSPAS-SARSAT 406 MHz decoder for GNU Radio
+     f7934c5 2025-10-12 10:15:09 Initial commit
+
+     
+     
+     
+     git branch -a)
+  ⎿  * (HEAD détachée sur 0f8c5a8)            
+       backup/demodulator-dev-history-20251119
+       feature/autocorrelation
+       main
+       pll-experiment
+       test-stream-mode
+       working_burst_detection
+       remotes/origin/feature/autocorrelation
+       remotes/origin/main

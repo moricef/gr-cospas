@@ -737,6 +737,24 @@ int cospas_burst_detector_impl::general_work(int noutput_items,
     // Consommer les echantillons d'entree
     consume_each(consumed);
 
+    // MODE PASS-THROUGH: Si aucun burst produit, copier entrée → sortie
+    // pour éviter scheduler starvation (produced=0 → scheduler arrête d'appeler)
+    if (produced == 0 && ninput > 0 && noutput_items > 0) {
+        int to_copy = std::min(ninput, noutput_items);
+        std::memcpy(out, in, to_copy * sizeof(gr_complex));
+        produced = to_copy;
+
+        if (d_debug_mode) {
+            static int passthrough_count = 0;
+            passthrough_count++;
+            if (passthrough_count % 5000 == 0) {
+                std::cerr << "[BURST_DETECTOR] Pass-through mode: "
+                          << passthrough_count << " times, copied "
+                          << to_copy << " samples" << std::endl;
+            }
+        }
+    }
+
     // Retourner le nombre d'echantillons produits
     return produced;
 }
