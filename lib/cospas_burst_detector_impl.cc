@@ -282,6 +282,19 @@ void cospas_burst_detector_impl::process_sample(const gr_complex& sample)
     }
 
     case IN_BURST: {
+        // PROTECTION: Timeout max de burst (1 seconde)
+        // Un vrai burst 1G dure max 520ms, 2G max 800ms
+        const int MAX_BURST_DURATION = static_cast<int>(d_sample_rate * 1.0f);  // 1s
+        if (d_burst_samples.size() >= static_cast<size_t>(MAX_BURST_DURATION)) {
+            if (d_debug_mode) {
+                std::cerr << "[BURST_DETECTOR] Burst timeout ("
+                          << d_burst_samples.size() << " samples > " << MAX_BURST_DURATION
+                          << ") - probablement du bruit" << std::endl;
+            }
+            reset_burst_state();
+            break;
+        }
+
         // === TECHNIQUE 2: Tracking SNR adaptatif ===
         // Calculer SNR instantané (basé sur corrélation, pas amplitude)
         float instant_snr = correlation / (d_adaptive_threshold + 1e-9f);
