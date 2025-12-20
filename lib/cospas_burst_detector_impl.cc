@@ -291,6 +291,20 @@ void cospas_burst_detector_impl::process_sample(const gr_complex& sample)
                           << d_burst_samples.size() << " samples > " << MAX_BURST_DURATION
                           << ") - probablement du bruit" << std::endl;
             }
+
+            // Diminuer le seuil adaptatif : ce burst était un faux positif
+            // qui a fait monter le seuil. On le ramène vers le minimum.
+            d_adaptive_threshold *= 0.5f;
+            const float floor_threshold = 1e-6f;
+            if (d_adaptive_threshold < floor_threshold) {
+                d_adaptive_threshold = floor_threshold;
+            }
+
+            if (d_debug_mode) {
+                std::cerr << "[BURST_DETECTOR] Seuil adaptatif abaissé à "
+                          << d_adaptive_threshold << " après timeout" << std::endl;
+            }
+
             reset_burst_state();
             break;
         }
