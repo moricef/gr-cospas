@@ -272,14 +272,10 @@ Part of the code is derived from F4EHY's work:
 
 ## License
 
-GNU General Public License v3.0
+This project is distributed under the MIT License. See [LICENSE](LICENSE).
 
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-See [LICENSE](LICENSE) file for details.
+Files copied from third-party templates or tools may retain their original
+copyright and SPDX notices.
 
 ---
 
